@@ -1,0 +1,203 @@
+// =====================================================================
+// Perfil — ver y editar los datos del jugador, su rating y sus
+// estadísticas. Es la pantalla a la que llega cualquiera justo después
+// de iniciar sesión.
+// =====================================================================
+
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
+import { obtenerEstadisticas } from '../lib/partidos';
+import { listarPagosPendientesDe } from '../lib/pagos';
+import { Avatar } from '../components/Avatar';
+import { formatearFechaCorta } from '../lib/fecha';
+import type { EstadisticasJugador, PagoPendiente, Posicion } from '../types/database';
+
+export function Perfil() {
+  const { jugador, esAdmin, cerrarSesion, actualizarJugador } = useAuth();
+  const [nombre, setNombre] = useState(jugador?.nombre ?? '');
+  const [apellidos, setApellidos] = useState(jugador?.apellidos ?? '');
+  const [posicion, setPosicion] = useState<Posicion>(jugador?.posicion_preferida ?? 'defensor');
+  const [guardando, setGuardando] = useState(false);
+  const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
+  const [stats, setStats] = useState<EstadisticasJugador | null>(null);
+  const [pagosPendientes, setPagosPendientes] = useState<PagoPendiente[]>([]);
+
+  useEffect(() => {
+    if (!jugador) return;
+    setNombre(jugador.nombre);
+    setApellidos(jugador.apellidos ?? '');
+    setPosicion(jugador.posicion_preferida);
+
+    obtenerEstadisticas(jugador.id).then(setStats);
+    listarPagosPendientesDe(jugador.id).then(setPagosPendientes);
+  }, [jugador]);
+
+  if (!jugador) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="font-body text-sm text-muted">Cargando tu perfil…</p>
+      </div>
+    );
+  }
+
+  async function guardar(evento: FormEvent) {
+    evento.preventDefault();
+    setMensaje(null);
+    setGuardando(true);
+    const { error } = await actualizarJugador({
+      nombre: nombre.trim(),
+      apellidos: apellidos.trim() || null,
+      posicion_preferida: posicion,
+    });
+    setGuardando(false);
+    setMensaje(
+      error
+        ? { tipo: 'error', texto: 'No se pudieron guardar los cambios. Inténtalo de nuevo.' }
+        : { tipo: 'ok', texto: 'Cambios guardados.' }
+    );
+  }
+
+  return (
+    <div className="mx-auto min-h-screen max-w-sm px-6 py-10">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Avatar nombre={nombre} apellidos={apellidos} tamaño="md" />
+          <div>
+            <p className="font-display text-lg leading-tight text-chalk">
+              {nombre} {apellidos}
+            </p>
+            {esAdmin && (
+              <span className="font-body text-xs uppercase tracking-wide text-confirmed">
+                Administrador
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => void cerrarSesion()}
+          className="font-body text-sm text-muted hover:text-chalk"
+        >
+          Cerrar sesión
+        </button>
+      </div>
+
+      <section className="mt-8 rounded-lg border border-pitch-line bg-pitch-mid p-4">
+        <p className="font-body text-xs uppercase tracking-wide text-muted">Rating actual</p>
+        <p className="font-display text-4xl tabular-nums text-floodlight">
+          {jugador.rating_actual.toFixed(1)}
+        </p>
+      </section>
+
+      {pagosPendientes.length > 0 && (
+        <section className="mt-4 rounded-lg border border-danger/40 bg-danger/10 p-4">
+          <p className="font-body text-sm font-semibold text-danger">
+            Tienes {pagosPendientes.length} partido{pagosPendientes.length === 1 ? '' : 's'} sin
+            pagar
+          </p>
+          <p className="mt-1 font-body text-xs text-muted">
+            Hasta que se regularicen, no podrás apuntarte a partidos nuevos.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {pagosPendientes.map((p) => (
+              <li key={p.inscripcion_id} className="font-body text-sm text-chalk">
+                {formatearFechaCorta(p.fecha)} · {p.campo}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {stats && (
+        <section className="mt-4 rounded-lg border border-pitch-line bg-pitch-mid p-4">
+          <p className="font-body text-xs uppercase tracking-wide text-muted">Estadísticas</p>
+          <dl className="mt-2 grid grid-cols-5 gap-2 text-center">
+            <Estadistica etiqueta="PJ" valor={stats.partidos_jugados} />
+            <Estadistica etiqueta="V" valor={stats.victorias} />
+            <Estadistica etiqueta="E" valor={stats.empates} />
+            <Estadistica etiqueta="D" valor={stats.derrotas} />
+            <Estadistica etiqueta="%" valor={stats.porcentaje_victorias} />
+          </dl>
+        </section>
+      )}
+
+      <form onSubmit={guardar} className="mt-6 space-y-4">
+        <div>
+          <label htmlFor="nombre" className="block font-body text-sm text-muted">
+            Nombre
+          </label>
+          <input
+            id="nombre"
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            required
+            className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk focus:border-floodlight"
+          />
+        </div>
+        <div>
+          <label htmlFor="apellidos" className="block font-body text-sm text-muted">
+            Apellidos
+          </label>
+          <input
+            id="apellidos"
+            value={apellidos}
+            onChange={(e) => setApellidos(e.target.value)}
+            className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk focus:border-floodlight"
+          />
+        </div>
+
+        <div>
+          <p className="block font-body text-sm text-muted">Posición preferida</p>
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            {(['atacante', 'defensor'] as const).map((opcion) => (
+              <button
+                key={opcion}
+                type="button"
+                onClick={() => setPosicion(opcion)}
+                className={`rounded-md border px-3 py-2 font-body text-sm capitalize transition-colors ${
+                  posicion === opcion
+                    ? 'border-floodlight bg-floodlight/10 text-floodlight'
+                    : 'border-pitch-line text-muted hover:text-chalk'
+                }`}
+              >
+                {opcion}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {mensaje && (
+          <p
+            className={`font-body text-sm ${mensaje.tipo === 'ok' ? 'text-confirmed' : 'text-danger'}`}
+          >
+            {mensaje.texto}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={guardando}
+          className="w-full rounded-md bg-floodlight px-4 py-2 font-display text-sm font-semibold uppercase tracking-wide text-pitch-deep transition-colors hover:bg-floodlight-dim disabled:opacity-60"
+        >
+          {guardando ? 'Guardando…' : 'Guardar cambios'}
+        </button>
+      </form>
+
+      <Link
+        to="/votacion"
+        className="mt-6 block text-center font-body text-sm text-muted hover:text-chalk"
+      >
+        Votar el ranking inicial del grupo
+      </Link>
+    </div>
+  );
+}
+
+function Estadistica({ etiqueta, valor }: { etiqueta: string; valor: number }) {
+  return (
+    <div>
+      <p className="font-display text-lg tabular-nums text-chalk">{valor}</p>
+      <p className="font-body text-[11px] uppercase tracking-wide text-muted">{etiqueta}</p>
+    </div>
+  );
+}

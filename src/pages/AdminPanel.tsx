@@ -1,0 +1,329 @@
+// =====================================================================
+// AdminPanel — gestión de jugadores y revisión/aplicación del ranking
+// inicial sugerido por la votación.
+// =====================================================================
+
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  actualizarJugadorAdmin,
+  aplicarRatingInicial,
+  calcularRatingsIniciales,
+  contarVotantes,
+  listarTodosLosJugadores,
+  type RatingSugerido,
+} from '../lib/admin';
+import type { Jugador, Posicion, RolUsuario } from '../types/database';
+import { Avatar } from '../components/Avatar';
+
+type Pestaña = 'jugadores' | 'ranking';
+
+export function AdminPanel() {
+  const [pestaña, setPestaña] = useState<Pestaña>('jugadores');
+
+  return (
+    <div className="mx-auto min-h-screen max-w-sm px-6 py-10">
+      <h1 className="font-display text-2xl uppercase tracking-wide text-chalk">
+        Panel de administrador
+      </h1>
+
+      <div className="mt-5 flex gap-1 rounded-md bg-pitch-mid p-1">
+        <BotonPestaña activa={pestaña === 'jugadores'} onClick={() => setPestaña('jugadores')}>
+          Jugadores
+        </BotonPestaña>
+        <BotonPestaña activa={pestaña === 'ranking'} onClick={() => setPestaña('ranking')}>
+          Ranking inicial
+        </BotonPestaña>
+      </div>
+
+      {pestaña === 'jugadores' && <SeccionJugadores />}
+      {pestaña === 'ranking' && <SeccionRanking />}
+    </div>
+  );
+}
+
+function BotonPestaña({
+  activa,
+  onClick,
+  children,
+}: {
+  activa: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 rounded-md py-1.5 font-body text-sm transition-colors ${
+        activa ? 'bg-pitch-deep text-floodlight' : 'text-muted hover:text-chalk'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Jugadores
+// ---------------------------------------------------------------------
+
+function SeccionJugadores() {
+  const [jugadores, setJugadores] = useState<Jugador[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editandoId, setEditandoId] = useState<string | null>(null);
+
+  function cargar() {
+    listarTodosLosJugadores()
+      .then(setJugadores)
+      .catch(() => setError('No se pudo cargar la lista de jugadores.'));
+  }
+
+  useEffect(cargar, []);
+
+  return (
+    <div className="mt-4 space-y-2">
+      {error && <p className="font-body text-sm text-danger">{error}</p>}
+      {!error && jugadores === null && <p className="font-body text-sm text-muted">Cargando…</p>}
+
+      {jugadores?.map((j) =>
+        editandoId === j.id ? (
+          <FormularioJugador
+            key={j.id}
+            jugador={j}
+            onCancelar={() => setEditandoId(null)}
+            onGuardado={() => {
+              setEditandoId(null);
+              cargar();
+            }}
+          />
+        ) : (
+          <FilaJugador key={j.id} jugador={j} onEditar={() => setEditandoId(j.id)} />
+        )
+      )}
+    </div>
+  );
+}
+
+function FilaJugador({ jugador, onEditar }: { jugador: Jugador; onEditar: () => void }) {
+  return (
+    <div className="flex items-center gap-3 rounded-md border border-pitch-line bg-pitch-mid p-3">
+      <Avatar nombre={jugador.nombre} apellidos={jugador.apellidos} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-body text-sm text-chalk">
+          {jugador.nombre} {jugador.apellidos}
+          {!jugador.activo && <span className="ml-1.5 text-xs text-danger">(de baja)</span>}
+        </p>
+        <p className="font-body text-xs capitalize text-muted">
+          {jugador.tipo} · {jugador.rol}
+        </p>
+      </div>
+      <button
+        onClick={onEditar}
+        className="font-body text-xs font-semibold text-floodlight hover:text-floodlight-dim"
+      >
+        Editar
+      </button>
+    </div>
+  );
+}
+
+function FormularioJugador({
+  jugador,
+  onCancelar,
+  onGuardado,
+}: {
+  jugador: Jugador;
+  onCancelar: () => void;
+  onGuardado: () => void;
+}) {
+  const [nombre, setNombre] = useState(jugador.nombre);
+  const [apellidos, setApellidos] = useState(jugador.apellidos ?? '');
+  const [posicion, setPosicion] = useState<Posicion>(jugador.posicion_preferida);
+  const [rol, setRol] = useState<RolUsuario>(jugador.rol);
+  const [activo, setActivo] = useState(jugador.activo);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function guardar() {
+    setError(null);
+    setGuardando(true);
+    const { error } = await actualizarJugadorAdmin(jugador.id, {
+      nombre: nombre.trim(),
+      apellidos: apellidos.trim() || null,
+      posicion_preferida: posicion,
+      rol,
+      activo,
+    });
+    setGuardando(false);
+    if (error) {
+      setError('No se pudo guardar.');
+      return;
+    }
+    onGuardado();
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-floodlight bg-pitch-mid p-3">
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Nombre"
+          className="rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm text-chalk"
+        />
+        <input
+          value={apellidos}
+          onChange={(e) => setApellidos(e.target.value)}
+          placeholder="Apellidos"
+          className="rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm text-chalk"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={posicion}
+          onChange={(e) => setPosicion(e.target.value as Posicion)}
+          className="rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm capitalize text-chalk"
+        >
+          <option value="atacante">Atacante</option>
+          <option value="defensor">Defensor</option>
+        </select>
+        <select
+          value={rol}
+          onChange={(e) => setRol(e.target.value as RolUsuario)}
+          className="rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm capitalize text-chalk"
+        >
+          <option value="jugador">Jugador</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+
+      <label className="flex items-center gap-2 font-body text-sm text-chalk">
+        <input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} />
+        Activo (aparece como opción para añadir a partidos nuevos)
+      </label>
+
+      {error && <p className="font-body text-sm text-danger">{error}</p>}
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => void guardar()}
+          disabled={guardando}
+          className="flex-1 rounded-md bg-floodlight px-3 py-1.5 font-display text-sm font-semibold uppercase tracking-wide text-pitch-deep disabled:opacity-60"
+        >
+          {guardando ? 'Guardando…' : 'Guardar'}
+        </button>
+        <button
+          onClick={onCancelar}
+          className="rounded-md border border-pitch-line px-3 py-1.5 font-body text-sm text-muted hover:text-chalk"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Ranking inicial
+// ---------------------------------------------------------------------
+
+function SeccionRanking() {
+  const [sugerencias, setSugerencias] = useState<RatingSugerido[] | null>(null);
+  const [votantes, setVotantes] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [calculando, setCalculando] = useState(false);
+  const [aplicandoId, setAplicandoId] = useState<string | null>(null);
+  const [ratings, setRatings] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    contarVotantes().then(setVotantes).catch(() => {});
+  }, []);
+
+  async function calcular() {
+    setError(null);
+    setCalculando(true);
+    try {
+      const datos = await calcularRatingsIniciales();
+      setSugerencias(datos);
+      setRatings(Object.fromEntries(datos.map((d) => [d.jugador_id, String(d.rating_sugerido)])));
+    } catch {
+      setError('No se pudo calcular el ranking. ¿Hay algún voto registrado todavía?');
+    } finally {
+      setCalculando(false);
+    }
+  }
+
+  async function aplicar(jugadorId: string) {
+    const valor = Number(ratings[jugadorId]);
+    if (Number.isNaN(valor)) return;
+    setAplicandoId(jugadorId);
+    const { error } = await aplicarRatingInicial(jugadorId, valor);
+    setAplicandoId(null);
+    if (error) setError('No se pudo aplicar ese rating.');
+  }
+
+  return (
+    <div className="mt-4 space-y-4">
+      <div className="rounded-md border border-pitch-line bg-pitch-mid p-3">
+        <p className="font-body text-sm text-muted">
+          {votantes ?? '…'} persona{votantes === 1 ? '' : 's'} ha
+          {votantes === 1 ? '' : 'n'} votado hasta ahora.
+        </p>
+        <Link
+          to="/votacion"
+          className="mt-1 inline-block font-body text-sm text-floodlight hover:text-floodlight-dim"
+        >
+          Ir a votar tu propio ranking →
+        </Link>
+      </div>
+
+      <button
+        onClick={() => void calcular()}
+        disabled={calculando}
+        className="w-full rounded-md bg-floodlight px-4 py-2 font-display text-sm font-semibold uppercase tracking-wide text-pitch-deep hover:bg-floodlight-dim disabled:opacity-60"
+      >
+        {calculando ? 'Calculando…' : 'Calcular ranking sugerido'}
+      </button>
+
+      {error && <p className="font-body text-sm text-danger">{error}</p>}
+
+      {sugerencias && sugerencias.length === 0 && (
+        <p className="font-body text-sm text-muted">Todavía no hay votos registrados.</p>
+      )}
+
+      {sugerencias && sugerencias.length > 0 && (
+        <div className="space-y-2">
+          {[...sugerencias]
+            .sort((a, b) => b.rating_sugerido - a.rating_sugerido)
+            .map((s) => (
+              <div
+                key={s.jugador_id}
+                className="flex items-center gap-2 rounded-md border border-pitch-line bg-pitch-mid p-2"
+              >
+                <span className="flex-1 truncate font-body text-sm text-chalk">{s.nombre}</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={ratings[s.jugador_id] ?? ''}
+                  onChange={(e) =>
+                    setRatings((prev) => ({ ...prev, [s.jugador_id]: e.target.value }))
+                  }
+                  className="w-20 rounded-md border border-pitch-line bg-pitch-deep px-2 py-1 font-body text-sm tabular-nums text-chalk"
+                />
+                <button
+                  onClick={() => void aplicar(s.jugador_id)}
+                  disabled={aplicandoId === s.jugador_id}
+                  className="font-body text-xs font-semibold text-confirmed hover:underline disabled:opacity-60"
+                >
+                  Aplicar
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}

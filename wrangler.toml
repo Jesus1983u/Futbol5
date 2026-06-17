@@ -1,0 +1,10 @@
+# Despliegue en Cloudflare Workers con "static assets" (ver README para
+# la razón de usar Workers en vez de Pages). `npm run build` genera
+# ./dist; este Worker simplemente lo sirve, con fallback de SPA para que
+# las rutas de React Router funcionen al recargar la página.
+name = "futbol5-app"
+compatibility_date = "2026-06-01"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
