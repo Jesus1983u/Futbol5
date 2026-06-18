@@ -39,6 +39,43 @@ export async function actualizarJugadorAdmin(
   return { error: error ? error.message : null };
 }
 
+export interface DatosNuevoUsuario {
+  nombre: string;
+  telefono: string;
+  password: string;
+  posicion: Jugador['posicion_preferida'];
+  rol: RolUsuario;
+}
+
+/** Crea la cuenta de Auth (teléfono + contraseña, auto-confirmada) y
+ *  su jugador en un solo paso, llamando al endpoint de servidor del
+ *  Worker (`worker/index.ts`) — la única pieza con permiso para tocar
+ *  la "service role key" de Supabase. Necesita el access token de la
+ *  sesión actual para que el servidor compruebe que quien llama es
+ *  administrador. */
+export async function crearUsuarioCompleto(
+  datos: DatosNuevoUsuario,
+  accessToken: string
+): Promise<ResultadoAccion> {
+  try {
+    const respuesta = await fetch('/api/crear-usuario', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(datos),
+    });
+    const cuerpo = await respuesta.json();
+    if (!respuesta.ok) {
+      return { error: cuerpo.error ?? 'No se pudo crear el usuario.' };
+    }
+    return { error: null };
+  } catch {
+    return { error: 'No se pudo contactar con el servidor. ¿Estás en local sin desplegar?' };
+  }
+}
+
 export async function finalizarPartido(
   partidoId: string,
   golesA: number,

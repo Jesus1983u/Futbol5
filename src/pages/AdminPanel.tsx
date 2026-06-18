@@ -10,12 +10,14 @@ import {
   aplicarRatingInicial,
   calcularRatingsIniciales,
   contarVotantes,
+  crearUsuarioCompleto,
   listarTodosLosJugadores,
   type RatingSugerido,
 } from '../lib/admin';
+import { useAuth } from '../hooks/useAuth';
 import type { Jugador, Posicion, RolUsuario } from '../types/database';
 import { Avatar } from '../components/Avatar';
-import { IconEngranaje } from '../components/icons';
+import { IconEngranaje, IconMas } from '../components/icons';
 
 type Pestaña = 'jugadores' | 'ranking';
 
@@ -73,6 +75,7 @@ function SeccionJugadores() {
   const [jugadores, setJugadores] = useState<Jugador[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editandoId, setEditandoId] = useState<string | null>(null);
+  const [creandoUsuario, setCreandoUsuario] = useState(false);
 
   function cargar() {
     listarTodosLosJugadores()
@@ -84,6 +87,24 @@ function SeccionJugadores() {
 
   return (
     <div className="mt-4 space-y-2">
+      {creandoUsuario ? (
+        <FormularioCrearUsuario
+          onCancelar={() => setCreandoUsuario(false)}
+          onCreado={() => {
+            setCreandoUsuario(false);
+            cargar();
+          }}
+        />
+      ) : (
+        <button
+          onClick={() => setCreandoUsuario(true)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-floodlight py-2 font-body text-sm font-semibold text-floodlight hover:bg-floodlight/10"
+        >
+          <IconMas className="h-4 w-4" />
+          Crear usuario nuevo
+        </button>
+      )}
+
       {error && <p className="font-body text-sm text-danger">{error}</p>}
       {!error && jugadores === null && <p className="font-body text-sm text-muted">Cargando…</p>}
 
@@ -102,6 +123,115 @@ function SeccionJugadores() {
           <FilaJugador key={j.id} jugador={j} onEditar={() => setEditandoId(j.id)} />
         )
       )}
+    </div>
+  );
+}
+
+function FormularioCrearUsuario({
+  onCancelar,
+  onCreado,
+}: {
+  onCancelar: () => void;
+  onCreado: () => void;
+}) {
+  const { session } = useAuth();
+  const [nombre, setNombre] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [password, setPassword] = useState('');
+  const [posicion, setPosicion] = useState<Posicion>('defensor');
+  const [rol, setRol] = useState<RolUsuario>('jugador');
+  const [creando, setCreando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [exito, setExito] = useState<string | null>(null);
+
+  async function crear() {
+    setError(null);
+    setExito(null);
+    if (!session) {
+      setError('No hay sesión activa.');
+      return;
+    }
+    setCreando(true);
+    const { error } = await crearUsuarioCompleto(
+      { nombre: nombre.trim(), telefono: telefono.trim(), password, posicion, rol },
+      session.access_token
+    );
+    setCreando(false);
+    if (error) {
+      setError(error);
+      return;
+    }
+    setExito(`${nombre.trim()} ya puede entrar con ese teléfono y contraseña.`);
+    setNombre('');
+    setTelefono('');
+    setPassword('');
+    setPosicion('defensor');
+    setRol('jugador');
+    onCreado();
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-floodlight bg-pitch-mid p-3">
+      <p className="font-body text-sm font-semibold text-chalk">Crear usuario nuevo</p>
+
+      <input
+        value={nombre}
+        onChange={(e) => setNombre(e.target.value)}
+        placeholder="Nombre"
+        className="w-full rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm text-chalk placeholder:text-muted"
+      />
+      <input
+        type="tel"
+        value={telefono}
+        onChange={(e) => setTelefono(e.target.value)}
+        placeholder="Teléfono (ej. 612345678 o +34612345678)"
+        className="w-full rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm text-chalk placeholder:text-muted"
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Contraseña (mínimo 6 caracteres)"
+        className="w-full rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm text-chalk placeholder:text-muted"
+      />
+
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={posicion}
+          onChange={(e) => setPosicion(e.target.value as Posicion)}
+          className="rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm capitalize text-chalk"
+        >
+          <option value="atacante">Atacante</option>
+          <option value="defensor">Defensor</option>
+        </select>
+        <select
+          value={rol}
+          onChange={(e) => setRol(e.target.value as RolUsuario)}
+          className="rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm capitalize text-chalk"
+        >
+          <option value="jugador">Usuario normal</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+
+      {error && <p className="font-body text-sm text-danger">{error}</p>}
+      {exito && <p className="font-body text-sm text-confirmed">{exito}</p>}
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => void crear()}
+          disabled={creando || !nombre.trim() || !telefono.trim() || password.length < 6}
+          className="flex-1 rounded-md bg-floodlight px-3 py-1.5 font-display text-sm font-semibold uppercase tracking-wide text-pitch-deep disabled:opacity-60"
+        >
+          {creando ? 'Creando…' : 'Crear'}
+        </button>
+        <button
+          onClick={onCancelar}
+          className="rounded-md border border-pitch-line px-3 py-1.5 font-body text-sm text-muted hover:text-chalk"
+        >
+          Cerrar
+        </button>
+      </div>
     </div>
   );
 }

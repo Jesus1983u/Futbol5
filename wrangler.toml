@@ -1,10 +1,29 @@
 # Despliegue en Cloudflare Workers con "static assets" (ver README para
 # la razón de usar Workers en vez de Pages). `npm run build` genera
-# ./dist; este Worker simplemente lo sirve, con fallback de SPA para que
-# las rutas de React Router funcionen al recargar la página.
+# ./dist; este Worker lo sirve, con fallback de SPA para que las rutas
+# de React Router funcionen al recargar la página.
+#
+# A partir de esta ronda, el Worker también ejecuta código de servidor
+# propio (worker/index.ts) para /api/* — concretamente, crear cuentas
+# de usuario desde el panel de Admin sin exponer la "service role key"
+# de Supabase al navegador. Para todo lo que no sea /api/*, el
+# comportamiento es exactamente igual que antes (assets primero).
 name = "futbol5-app"
 compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat"]
+main = "worker/index.ts"
 
 [assets]
 directory = "./dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# La URL de Supabase no es secreta (es la misma que ya está en tu
+# .env del frontend) así que puede ir aquí en texto plano. La clave
+# que SÍ es secreta es la "service role key" — esa se configura por
+# separado con `npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY`,
+# nunca en este archivo. Ver README, sección "Crear usuarios desde la
+# app", para los pasos exactos.
+[vars]
+SUPABASE_URL = "https://TU-PROYECTO.supabase.co"

@@ -15,6 +15,7 @@ schema.sql                          → esquema completo de Supabase, listo para
 wrangler.toml                       → despliegue en Cloudflare Workers (static assets)
 index.html, vite.config.ts, etc.    → proyecto Vite + React + TypeScript + Tailwind
 public/manifest.json, sw.js, icon-*.png → PWA: instalable en pantalla de inicio
+worker/index.ts, tsconfig.worker.json → endpoint de servidor: crear usuarios (service role key)
 
 src/types/database.ts               → tipos TypeScript que reflejan las tablas y vistas
 src/lib/supabase.ts                 → cliente de Supabase
@@ -325,6 +326,91 @@ activo/inactivo funcionaba. Ahora además, si vuelve a fallar, el
 mensaje rojo te dirá el motivo exacto en vez de un genérico "no se
 pudo guardar" — así si es otra cosa, lo vemos enseguida.
 
+## Crear usuarios desde la app
+
+Ya no hace falta entrar al panel de Supabase para dar de alta a
+alguien: en **Admin → Jugadores → "Crear usuario nuevo"** rellenas
+nombre, teléfono, contraseña, posición y si es usuario normal o
+administrador, y al pulsar "Crear" queda todo hecho — la cuenta de
+acceso y su fila de jugador, en un solo paso.
+
+**Por qué esto necesitaba una pieza nueva de servidor.** Crear una
+cuenta de acceso (no solo una fila en una tabla) requiere la "service
+role key" de Supabase, una clave que se salta todos los permisos y
+por eso nunca puede llegar al navegador — si estuviera en el código
+del frontend, cualquiera podría sacarla inspeccionando el JavaScript y
+crear o borrar lo que quisiera. Por eso ahora el Worker de Cloudflare,
+además de servir la app, también ejecuta un trozo de código de
+servidor propio (`worker/index.ts`) para la ruta `/api/crear-usuario`.
+Esa es la única pieza que conoce esa clave. El flujo: comprueba que
+quien llama tiene una sesión válida, comprueba que esa persona es
+administrador en la tabla `jugadores`, valida los datos, crea la
+cuenta en Supabase Auth (con el teléfono ya confirmado, sin mandar
+ningún SMS) y por último crea o actualiza su fila de jugador con los
+datos que ya elegiste — sin esperar a que esa persona inicie sesión
+por primera vez.
+
+**Configuración que falta hacer una vez, antes de que esto funcione:**
+
+1. Ve a Supabase → **Project Settings → API** y copia la **service
+   role key** (no la `anon` key — la de "service_role", que pone una
+   advertencia al lado).
+2. En tu terminal, dentro de la carpeta del proyecto:
+   ```
+   npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+   ```
+   Te pedirá que pegues el valor — pégalo y pulsa Enter. Esto la guarda
+   cifrada en Cloudflare, no en ningún archivo del proyecto.
+3. Abre `wrangler.toml` y cambia `SUPABASE_URL` (dentro de `[vars]`)
+   por la URL real de tu proyecto — la misma que ya tienes en tu
+   `.env` del frontend.
+4. `npm run build` y `npx wrangler deploy` como siempre.
+
+Una vez hecho esto, no hay que repetirlo salvo que cambies de proyecto
+de Supabase. La clave no se borra entre despliegues.
+
+**Una nota sobre las contraseñas:** Supabase exige un mínimo de 6
+caracteres. Tú eliges la contraseña de cada persona y se la dices por
+donde prefieras (WhatsApp, en persona); no hay recuperación automática
+si la olvida — en ese caso, edítala tú desde Supabase → Authentication
+→ Users → esa persona → "..." → cambiar contraseña.
+
+## Permisos: jugador normal frente a administrador
+
+Esto lo he sacado revisando directamente las políticas de la base de
+datos (RLS) y las funciones SQL, no de memoria, para que sea exacto.
+
+Cualquier **jugador** (sin ser admin) puede: iniciar sesión con el
+teléfono y contraseña que le hayas creado; ver todo — partidos
+pasados y futuros, convocatorias, equipos generados, clasificación
+general, historial de compañeros; apuntarse y desapuntarse a sí mismo
+de un partido abierto (nunca a otra persona); votar el ranking inicial
+del resto del grupo; ver sus propios pagos pendientes; y editar su
+nombre, apellidos y posición preferida (esto último, solo la primera
+vez) desde su perfil.
+
+Solo el **administrador** puede: crear, editar y cancelar partidos;
+añadir o quitar a cualquier persona de una convocatoria (no solo a sí
+mismo); generar y confirmar los equipos; registrar el resultado de un
+partido jugado (esto es lo que dispara el cambio de rating de todo el
+mundo); marcar pagos como hechos o pendientes; crear, editar y dar de
+baja jugadores; aplicar el ranking inicial calculado a partir de las
+votaciones; y, desde esta ronda, crear usuarios nuevos completos.
+
+**Una precisión honesta, ya que me pides dejarlo bien definido:** casi
+todo lo de arriba está reforzado en el servidor — alguien con
+conocimientos técnicos no podría saltárselo llamando directamente a la
+API, aunque modificara la app. Hay dos excepciones, ambas de bajo
+riesgo para un grupo de amigos, que conviene que sepas: el bloqueo de
+"la posición preferida solo se puede elegir una vez" y el de "el voto
+del ranking inicial se bloquea tras enviarlo" están aplicados solo en
+la pantalla (React), no en la base de datos — alguien que supiera
+llamar a la API directamente podría seguir cambiando esas dos cosas
+suyas propias sin que el servidor lo impida. Para un grupo cerrado
+donde tú creas cada cuenta, no le veo riesgo real, pero si en algún
+momento te preocupa, se puede mover ese bloqueo a la base de datos
+también — dímelo y lo hago.
+
 ## Decisiones de diseño visual
 
 Nada de plantilla genérica de SaaS: la paleta y la tipografía están
@@ -447,20 +533,26 @@ que ya ha coincidido 25 veces.
    ```sql
    update jugadores set rol = 'admin' where telefono = '+34TUNUMERO';
    ```
-4. Para cada persona del grupo, repite el primer paso del punto 3
-   (Authentication → Users → Add user, con su teléfono y una
-   contraseña que tú le asignes) — el detalle completo está en "Cómo
-   funciona el login" más arriba.
+4. Para cada persona del grupo, una vez tengas la app desplegada
+   (sigue leyendo) y seas administrador, ya puedes crearle la cuenta
+   desde dentro de la propia app — Admin → Jugadores → "Crear usuario
+   nuevo" — en vez de entrar al panel de Supabase cada vez. Ver "Crear
+   usuarios desde la app" más abajo para los detalles y la
+   configuración que falta para que esa pantalla funcione.
 5. Copia `.env.example` a `.env` con la URL y la anon key de tu
    proyecto (Project Settings → API). Esto es lo único que necesitas
    para `npm run dev` en local **y** para desplegar: al hacer
    `npm run build`, Vite lee el `.env` y deja esos valores ya escritos
    dentro del JavaScript compilado. No hace falta (ni sirve) añadirlos
-   como "Environment Variables" en el panel de Cloudflare — al ser un
-   Worker de solo archivos estáticos, esas variables de Cloudflare
-   solo las vería código que corra en el propio Worker, no el
-   JavaScript que se le sirve al navegador.
-6. `npm run build` y luego `npx wrangler login` (la primera vez, para
+   como "Environment Variables" en el panel de Cloudflare — esas
+   variables de Cloudflare solo las vería el código que corre dentro
+   del propio Worker (`worker/index.ts`), no el JavaScript que se le
+   sirve al navegador.
+6. Configura el secreto de la "service role key" (ver "Crear usuarios
+   desde la app" más abajo para el paso a paso) — sin esto, todo lo
+   demás funciona igual, solo fallaría el botón de "Crear usuario
+   nuevo".
+7. `npm run build` y luego `npx wrangler login` (la primera vez, para
    autorizar wrangler contra tu cuenta de Cloudflare) y `npx wrangler
    deploy`. Te da una URL del tipo
    `futbol5-app.tu-usuario.workers.dev` para compartir con el grupo.
@@ -545,6 +637,9 @@ esquema de antes desplegado en Supabase" (las columnas `telefono` y
 `posicion_confirmada` nuevas + volver a pegar `fn_completar_registro`)
 — sin eso, el login por teléfono no tiene dónde guardar el número, y
 el panel de Admin falla al guardar cualquier cambio en un jugador.
+Tampoco olvides el secreto `SUPABASE_SERVICE_ROLE_KEY` (ver "Crear
+usuarios desde la app") — sin él, todo funciona igual salvo el botón
+de "Crear usuario nuevo".
 
 La app ya se puede instalar como PWA (icono en pantalla de inicio, sin
 notificaciones todavía) — ver "PWA: instalable en el móvil" más
@@ -558,12 +653,9 @@ aparte (notificaciones por email), es montar el Cloudflare Worker con
 Cron Trigger que llame a `fn_partidos_para_recordatorio()` 24h antes
 de cada partido y dispare los emails vía Resend — la función SQL ya
 está lista, solo falta el Worker que la invoque y la integración con
-Resend. Si en algún momento quieres ir más allá y que tú mismo puedas
-crear cuentas nuevas desde dentro de la app (en vez de entrar al
-panel de Supabase cada vez), eso necesitaría un endpoint propio en el
-Worker de Cloudflare que use la "service role key" de Supabase — una
-pieza más, con su propia clave secreta que nunca puede llegar al
-navegador. Dímelo si te interesa y lo monto como su propia fase.
+Resend. (Lo de crear cuentas desde dentro de la app, que hasta esta
+ronda estaba en esta misma lista como pendiente, ya está hecho — ver
+"Crear usuarios desde la app" más arriba.)
 
 Más allá de eso, todo lo que viene ahora es pulido sobre lo que ya
 funciona: probarlo con el grupo real, ver qué fricciones aparecen
