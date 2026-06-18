@@ -43,6 +43,7 @@ create table jugadores (
   nombre text not null,
   apellidos text,
   email text,
+  telefono text,
   posicion_preferida posicion_jugador not null default 'defensor',
 
   rating_actual numeric(5,2) not null default 50,
@@ -252,38 +253,47 @@ returns boolean language sql stable as $$
 $$;
 
 -- ---------------------------------------------------------------------
--- Completar registro tras el login (código OTP por email). Se llama una
--- vez por sesión nueva, justo después de que Supabase Auth confirme el
--- código. No requiere ser admin: cualquier usuario autenticado puede
--- "reclamar" su propio perfil, pero solo el suyo (se ata al email de su
--- propio auth.users, nunca al que el cliente le pase como parámetro).
+-- Completar registro tras el login. Se llama una vez por sesión
+-- nueva, justo después de que Supabase Auth confirme la sesión. No
+-- requiere ser admin: cualquier usuario autenticado puede "reclamar"
+-- su propio perfil, pero solo el suyo (se ata al teléfono/email de su
+-- propio auth.users, nunca a uno que el cliente le pase como
+-- parámetro).
+--
+-- Reconoce tanto teléfono como email, porque el grupo entra con
+-- teléfono+contraseña (cuentas que crea el admin a mano) pero el
+-- primer login de prueba se hizo por email — así ninguno de los dos
+-- caminos se queda colgado.
 --
 -- Tres casos, en este orden:
 --   1) Ya existe un jugador vinculado a este auth_user_id -> se devuelve
 --      tal cual (login normal de alguien que ya completó el registro).
 --   2) Existe un invitado (creado de antemano por el admin, p.ej. al
---      añadirlo a un partido) con ese email exacto y sin auth_user_id
---      todavía -> se vincula y pasa a 'registrado', conservando intacto
---      su historial, estadísticas y rating (mismo mecanismo que
---      fn_convertir_invitado, pero auto-servicio en vez de admin-only).
---   3) No existe ningún jugador con ese email -> se crea uno nuevo como
---      'jugador' normal, con un nombre provisional (la parte local del
---      email) que la persona puede cambiar luego en su perfil.
+--      añadirlo a un partido) con ese teléfono o email exacto y sin
+--      auth_user_id todavía -> se vincula y pasa a 'registrado',
+--      conservando intacto su historial, estadísticas y rating (mismo
+--      mecanismo que fn_convertir_invitado, pero auto-servicio en vez
+--      de admin-only).
+--   3) No existe ningún jugador con ese teléfono/email -> se crea uno
+--      nuevo como 'jugador' normal, con un nombre provisional (la
+--      parte local del email, o el propio teléfono si no hay email)
+--      que la persona puede cambiar luego en su perfil.
 -- ---------------------------------------------------------------------
 create or replace function fn_completar_registro()
 returns jugadores language plpgsql security definer as $$
 declare
   v_uid uuid := auth.uid();
   v_email text;
+  v_phone text;
   v_fila jugadores;
 begin
   if v_uid is null then
     raise exception 'NO_AUTENTICADO: No hay una sesión activa.';
   end if;
 
-  select email into v_email from auth.users where id = v_uid;
-  if v_email is null then
-    raise exception 'SIN_EMAIL: No se pudo determinar el email de la sesión.';
+  select email, phone into v_email, v_phone from auth.users where id = v_uid;
+  if v_email is null and v_phone is null then
+    raise exception 'SIN_IDENTIDAD: No se pudo determinar el teléfono ni el email de la sesión.';
   end if;
 
   select * into v_fila from jugadores where auth_user_id = v_uid;
@@ -292,15 +302,25 @@ begin
   end if;
 
   update jugadores
-    set auth_user_id = v_uid, tipo = 'registrado', email = v_email
-    where email = v_email and tipo = 'invitado' and auth_user_id is null
+    set auth_user_id = v_uid, tipo = 'registrado',
+        telefono = coalesce(telefono, v_phone),
+        email = coalesce(email, v_email)
+    where tipo = 'invitado' and auth_user_id is null
+      and (
+        (v_phone is not null and telefono = v_phone) or
+        (v_email is not null and email = v_email)
+      )
   returning * into v_fila;
   if found then
     return v_fila;
   end if;
 
-  insert into jugadores (auth_user_id, tipo, rol, nombre, email)
-  values (v_uid, 'registrado', 'jugador', split_part(v_email, '@', 1), v_email)
+  insert into jugadores (auth_user_id, tipo, rol, nombre, email, telefono)
+  values (
+    v_uid, 'registrado', 'jugador',
+    coalesce(split_part(v_email, '@', 1), v_phone, 'Jugador nuevo'),
+    v_email, v_phone
+  )
   returning * into v_fila;
 
   return v_fila;
@@ -696,6 +716,25 @@ language sql stable as $$
   where p.estado = 'abierto'
     and (p.fecha + p.hora) between (now() + interval '23 hours') and (now() + interval '25 hours');
 $$;
+
+-- ---------------------------------------------------------------------
+-- Código de invitación del grupo. Lo comprueba el cliente ANTES de
+-- pedir el código de login por email, para que alguien que solo tenga
+-- el enlace (reenviado sin permiso, por ejemplo) no pueda registrarse
+-- sin más. El código real vive solo aquí, en el servidor — nunca llega
+-- al JavaScript de la app, así que no se puede sacar inspeccionando el
+-- código fuente como pasaría con una variable de entorno del frontend.
+--
+-- CAMBIA 'PARTIDO2026' por tu propia palabra de paso antes de
+-- desplegar, y cada vez que quieras cambiarla más adelante: vuelve a
+-- pegar este "create or replace function" con el texto nuevo.
+-- ---------------------------------------------------------------------
+create or replace function fn_codigo_invitacion_valido(p_codigo text)
+returns boolean language sql stable as $$
+  select p_codigo = 'PARTIDO2026';
+$$;
+
+grant execute on function fn_codigo_invitacion_valido(text) to anon, authenticated;
 
 -- =====================================================================
 -- RLS (Row Level Security)

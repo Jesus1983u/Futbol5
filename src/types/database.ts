@@ -19,6 +19,7 @@ export interface Jugador {
   nombre: string;
   apellidos: string | null;
   email: string | null;
+  telefono: string | null;
   posicion_preferida: Posicion;
   rating_actual: number;
   rating_inicial_confirmado: boolean;

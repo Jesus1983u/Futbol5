@@ -33,7 +33,6 @@ export async function obtenerMiVotoActual(propioId: string): Promise<string[]> {
   if (error) throw error;
   return (data ?? []).map((fila) => fila.jugador_id as string);
 }
-
 export async function guardarVotacion(orden: string[]): Promise<ResultadoAccion> {
   const { error } = await supabase.rpc('fn_guardar_votacion', { p_orden: orden });
   return { error: error ? error.message : null };

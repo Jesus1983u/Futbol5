@@ -2,12 +2,23 @@
 // AuthContext — sesión de Supabase Auth + el registro `jugadores`
 // vinculado a esa sesión.
 // =====================================================================
-// El login es sin contraseña: la persona escribe su email, recibe un
-// código de 6 dígitos, lo introduce y queda autenticada. Justo después
-// de confirmar el código, llamamos a la función `fn_completar_registro`
-// (ver schema.sql) para obtener su fila de `jugadores` — vinculando un
-// invitado preexistente si el admin ya le había dado de alta, o creando
-// una fila nueva si es la primera vez que entra alguien con ese email.
+// El login es por teléfono + contraseña: tú (el admin) creas cada
+// cuenta a mano en Supabase → Authentication → Users → "Add user",
+// con el teléfono de la persona y una contraseña que tú le asignas
+// ("Auto Confirm User" marcado, así no se manda ningún SMS). No hay
+// alta por cuenta propia — nadie entra si no le has creado la cuenta
+// tú antes.
+//
+// Se mantiene además `entrarConContrasena` (email + contraseña) como
+// vía de respaldo, sobre todo para que tu propia cuenta de pruebas
+// (creada por email durante el desarrollo) no se quede colgada el día
+// que cambies de móvil o borres el almacenamiento del navegador.
+//
+// Justo después de iniciar sesión, llamamos a `fn_completar_registro`
+// (ver schema.sql) para obtener la fila de `jugadores` — vinculando un
+// invitado preexistente si ya le habías dado de alta (por teléfono o
+// email), o creando una fila nueva si es la primera vez que entra
+// alguien con ese teléfono/email.
 // =====================================================================
 
 import {
@@ -29,8 +40,7 @@ interface AuthContextValue {
   session: Session | null;
   jugador: Jugador | null;
   errorJugador: string | null;
-  enviarCodigo: (email: string) => Promise<{ error: string | null }>;
-  verificarCodigo: (email: string, codigo: string) => Promise<{ error: string | null }>;
+  iniciarSesionTelefono: (telefono: string, password: string) => Promise<{ error: string | null }>;
   entrarConContrasena: (email: string, password: string) => Promise<{ error: string | null }>;
   cerrarSesion: () => Promise<void>;
   actualizarJugador: (cambios: Partial<Jugador>) => Promise<{ error: string | null }>;
@@ -39,12 +49,9 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-function mapearErrorSupabase(mensaje: string): string {
-  if (mensaje.includes('Invalid login credentials') || mensaje.includes('Token has expired')) {
-    return 'El código no es válido o ha caducado. Pide uno nuevo.';
-  }
-  if (mensaje.toLowerCase().includes('rate limit')) {
-    return 'Has agotado el límite de correos del plan gratuito de Supabase (2 por hora en total para todo el proyecto). Espera una hora y vuelve a intentarlo, o pídele al administrador que configure un SMTP propio para no tener este límite.';
+function mensajeCredencialesInvalidas(mensaje: string): string {
+  if (mensaje.includes('Invalid login credentials')) {
+    return 'Teléfono/email o contraseña incorrectos.';
   }
   return mensaje;
 }
@@ -94,37 +101,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [cargarJugador]);
 
-  const enviarCodigo = useCallback(async (email: string) => {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: true },
-    });
-    return { error: error ? mapearErrorSupabase(error.message) : null };
+  // Vía principal para el grupo: el admin crea la cuenta de antemano
+  // con este mismo teléfono, así que aquí solo hace falta iniciar
+  // sesión, nunca registrarse.
+  const iniciarSesionTelefono = useCallback(async (telefono: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ phone: telefono, password });
+    return { error: error ? mensajeCredencialesInvalidas(error.message) : null };
   }, []);
 
-  const verificarCodigo = useCallback(async (email: string, codigo: string) => {
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: codigo,
-      type: 'email',
-    });
-    return { error: error ? mapearErrorSupabase(error.message) : null };
-  }, []);
-
-  // Vía de respaldo que no pasa por email en absoluto: para usarla, alguien
-  // (normalmente el propio admin, antes de que exista ningún otro admin)
-  // tiene que crear el usuario a mano en Supabase → Authentication → Users
-  // → "Add user", con "Auto Confirm User" marcado y una contraseña. No es
-  // el flujo pensado para el grupo — ese sigue siendo el código por
-  // email — pero permite entrar de inmediato si el correo está bloqueado
-  // por el límite de envíos o aún no hay SMTP configurado.
+  // Vía de respaldo por email, para no dejar sin acceso a quien tenga
+  // una cuenta de pruebas creada antes de pasar a teléfono+contraseña.
   const entrarConContrasena = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error) return { error: null };
-    if (error.message.includes('Invalid login credentials')) {
-      return { error: 'Email o contraseña incorrectos.' };
-    }
-    return { error: error.message };
+    return { error: error ? mensajeCredencialesInvalidas(error.message) : null };
   }, []);
 
   const cerrarSesion = useCallback(async () => {
@@ -152,8 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     jugador,
     errorJugador,
-    enviarCodigo,
-    verificarCodigo,
+    iniciarSesionTelefono,
     entrarConContrasena,
     cerrarSesion,
     actualizarJugador,

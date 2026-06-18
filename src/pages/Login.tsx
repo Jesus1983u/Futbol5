@@ -1,23 +1,34 @@
 // =====================================================================
-// Login — entrada sin contraseña por código de un solo uso.
+// Login — teléfono + contraseña. No hay alta por cuenta propia: el
+// administrador crea cada cuenta de antemano en Supabase, así que esta
+// pantalla solo inicia sesión, nunca registra a nadie nuevo.
 // =====================================================================
 
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { ScoreboardCodeInput } from '../components/ScoreboardCodeInput';
 
-type Paso = 'email' | 'codigo' | 'contrasena';
+type Paso = 'telefono' | 'email';
+
+/** Si no empieza por "+", asumimos un móvil español de 9 cifras y le
+ *  ponemos el prefijo — así cualquiera puede escribir su número tal
+ *  cual lo diría en voz alta, sin pensar en formatos internacionales. */
+function normalizarTelefono(valor: string): string {
+  const limpio = valor.replace(/[\s-]/g, '');
+  if (limpio.startsWith('+')) return limpio;
+  return `+34${limpio}`;
+}
 
 export function Login() {
-  const { estado, enviarCodigo, verificarCodigo, entrarConContrasena } = useAuth();
+  const { estado, iniciarSesionTelefono, entrarConContrasena } = useAuth();
   const location = useLocation();
   const destino = (location.state as { desde?: string } | null)?.desde ?? '/partidos';
 
-  const [paso, setPaso] = useState<Paso>('email');
+  const [paso, setPaso] = useState<Paso>('telefono');
+  const [telefono, setTelefono] = useState('');
+  const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
-  const [codigo, setCodigo] = useState('');
-  const [contrasena, setContrasena] = useState('');
+  const [passwordEmail, setPasswordEmail] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,45 +36,20 @@ export function Login() {
     return <Navigate to={destino} replace />;
   }
 
-  async function manejarEnvioEmail(evento: FormEvent) {
+  async function manejarEntradaTelefono(evento: FormEvent) {
     evento.preventDefault();
     setError(null);
     setEnviando(true);
-    const { error } = await enviarCodigo(email.trim());
-    setEnviando(false);
-    if (error) {
-      setError(error);
-      return;
-    }
-    setPaso('codigo');
-  }
-
-  async function manejarVerificacion(evento: FormEvent) {
-    evento.preventDefault();
-    if (codigo.length < 6) return;
-    setError(null);
-    setEnviando(true);
-    const { error } = await verificarCodigo(email.trim(), codigo);
-    setEnviando(false);
-    if (error) {
-      setError(error);
-      setCodigo('');
-    }
-  }
-
-  async function reenviarCodigo() {
-    setError(null);
-    setEnviando(true);
-    const { error } = await enviarCodigo(email.trim());
+    const { error } = await iniciarSesionTelefono(normalizarTelefono(telefono), password);
     setEnviando(false);
     if (error) setError(error);
   }
 
-  async function manejarEntrarConContrasena(evento: FormEvent) {
+  async function manejarEntradaEmail(evento: FormEvent) {
     evento.preventDefault();
     setError(null);
     setEnviando(true);
-    const { error } = await entrarConContrasena(email.trim(), contrasena);
+    const { error } = await entrarConContrasena(email.trim(), passwordEmail);
     setEnviando(false);
     if (error) setError(error);
   }
@@ -73,8 +59,63 @@ export function Login() {
       <div className="w-full max-w-sm">
         <Cabecera />
 
+        {paso === 'telefono' && (
+          <form onSubmit={manejarEntradaTelefono} className="mt-8 space-y-4">
+            <div>
+              <label htmlFor="telefono" className="block font-body text-sm text-muted">
+                Teléfono
+              </label>
+              <input
+                id="telefono"
+                type="tel"
+                required
+                autoComplete="tel"
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                placeholder="612 345 678"
+                className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk placeholder:text-muted focus:border-floodlight"
+              />
+            </div>
+            <div>
+              <label htmlFor="password-telefono" className="block font-body text-sm text-muted">
+                Contraseña
+              </label>
+              <input
+                id="password-telefono"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk focus:border-floodlight"
+              />
+            </div>
+            {error && <p className="font-body text-sm text-danger">{error}</p>}
+            <button
+              type="submit"
+              disabled={enviando}
+              className="w-full rounded-md bg-floodlight px-4 py-2 font-display text-sm font-semibold uppercase tracking-wide text-pitch-deep transition-colors hover:bg-floodlight-dim disabled:opacity-60"
+            >
+              {enviando ? 'Entrando…' : 'Entrar'}
+            </button>
+            <p className="text-center font-body text-xs text-muted">
+              ¿No tienes cuenta todavía? Pídesela al administrador del grupo.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setPaso('email');
+              }}
+              className="block w-full text-center font-body text-xs text-muted hover:text-chalk"
+            >
+              Entrar con email
+            </button>
+          </form>
+        )}
+
         {paso === 'email' && (
-          <form onSubmit={manejarEnvioEmail} className="mt-8 space-y-4">
+          <form onSubmit={manejarEntradaEmail} className="mt-8 space-y-4">
             <div>
               <label htmlFor="email" className="block font-body text-sm text-muted">
                 Correo electrónico
@@ -90,55 +131,17 @@ export function Login() {
                 className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk placeholder:text-muted focus:border-floodlight"
               />
             </div>
-            {error && <p className="font-body text-sm text-danger">{error}</p>}
-            <button
-              type="submit"
-              disabled={enviando}
-              className="w-full rounded-md bg-floodlight px-4 py-2 font-display text-sm font-semibold uppercase tracking-wide text-pitch-deep transition-colors hover:bg-floodlight-dim disabled:opacity-60"
-            >
-              {enviando ? 'Enviando…' : 'Enviar código'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setError(null);
-                setPaso('contrasena');
-              }}
-              className="block w-full text-center font-body text-xs text-muted hover:text-chalk"
-            >
-              ¿No te llega el correo? Entrar con contraseña
-            </button>
-          </form>
-        )}
-
-        {paso === 'contrasena' && (
-          <form onSubmit={manejarEntrarConContrasena} className="mt-8 space-y-4">
             <div>
-              <label htmlFor="email-contrasena" className="block font-body text-sm text-muted">
-                Correo electrónico
-              </label>
-              <input
-                id="email-contrasena"
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="tunombre@correo.com"
-                className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk placeholder:text-muted focus:border-floodlight"
-              />
-            </div>
-            <div>
-              <label htmlFor="contrasena" className="block font-body text-sm text-muted">
+              <label htmlFor="password-email" className="block font-body text-sm text-muted">
                 Contraseña
               </label>
               <input
-                id="contrasena"
+                id="password-email"
                 type="password"
                 required
                 autoComplete="current-password"
-                value={contrasena}
-                onChange={(e) => setContrasena(e.target.value)}
+                value={passwordEmail}
+                onChange={(e) => setPasswordEmail(e.target.value)}
                 className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk focus:border-floodlight"
               />
             </div>
@@ -154,46 +157,12 @@ export function Login() {
               type="button"
               onClick={() => {
                 setError(null);
-                setPaso('email');
+                setPaso('telefono');
               }}
               className="block w-full text-center font-body text-xs text-muted hover:text-chalk"
             >
-              Volver al código por email
+              Volver a teléfono
             </button>
-          </form>
-        )}
-
-        {paso === 'codigo' && (
-          <form onSubmit={manejarVerificacion} className="mt-8 space-y-5">
-            <p className="text-center font-body text-sm text-muted">
-              Te hemos enviado un código a <span className="text-chalk">{email}</span>
-            </p>
-            <ScoreboardCodeInput valor={codigo} onChange={setCodigo} disabled={enviando} />
-            {error && <p className="text-center font-body text-sm text-danger">{error}</p>}
-            <button
-              type="submit"
-              disabled={enviando || codigo.length < 6}
-              className="w-full rounded-md bg-floodlight px-4 py-2 font-display text-sm font-semibold uppercase tracking-wide text-pitch-deep transition-colors hover:bg-floodlight-dim disabled:opacity-60"
-            >
-              {enviando ? 'Comprobando…' : 'Verificar'}
-            </button>
-            <div className="flex justify-between font-body text-sm">
-              <button
-                type="button"
-                onClick={() => setPaso('email')}
-                className="text-muted hover:text-chalk"
-              >
-                Cambiar email
-              </button>
-              <button
-                type="button"
-                onClick={reenviarCodigo}
-                disabled={enviando}
-                className="text-confirmed hover:text-chalk"
-              >
-                Reenviar código
-              </button>
-            </div>
           </form>
         )}
       </div>
@@ -220,7 +189,7 @@ function Cabecera() {
       <h1 className="font-display text-2xl font-semibold uppercase tracking-wide text-chalk">
         Fútbol 5 Utrera
       </h1>
-      <p className="mt-1 font-body text-sm text-muted">Entra con tu correo, sin contraseña</p>
+      <p className="mt-1 font-body text-sm text-muted">Entra con tu teléfono y contraseña</p>
     </div>
   );
 }

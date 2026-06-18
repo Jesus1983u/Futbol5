@@ -136,12 +136,20 @@ export async function listarJugadoresActivos(): Promise<Jugador[]> {
   return (data ?? []) as Jugador[];
 }
 
-export async function crearInvitado(nombre: string): Promise<Jugador> {
-  const { data, error } = await supabase
-    .from('jugadores')
-    .insert({ nombre, tipo: 'invitado' })
-    .select()
-    .single();
+export async function crearInvitado(
+  nombre: string,
+  ratingEstimado?: number,
+  email?: string,
+  telefono?: string
+): Promise<Jugador> {
+  const datos: Record<string, unknown> = { nombre, tipo: 'invitado' };
+  if (ratingEstimado !== undefined) {
+    datos.rating_actual = ratingEstimado;
+    datos.rating_inicial_confirmado = true;
+  }
+  if (email) datos.email = email;
+  if (telefono) datos.telefono = telefono;
+  const { data, error } = await supabase.from('jugadores').insert(datos).select().single();
   if (error) throw error;
   return data as Jugador;
 }
@@ -162,6 +170,36 @@ export async function obtenerHistorialPares(): Promise<ParEnHistorial[]> {
     jugadorB: fila.jugador_mayor_id,
     veces: fila.veces_jugado_juntos,
   }));
+}
+
+export interface ParConNombres {
+  nombreA: string;
+  nombreB: string;
+  veces: number;
+}
+
+/** Para la pantalla de Historial: igual que obtenerHistorialPares pero
+ *  con los nombres ya resueltos, ordenado de más a menos veces juntos.
+ *  Se hace el cruce en JS en vez de pedirle a PostgREST que incruste
+ *  dos relaciones distintas hacia la misma tabla (jugador_menor_id y
+ *  jugador_mayor_id), que necesitaría nombrar las foreign keys exactas
+ *  — esto es más simple y el grupo es pequeño, así que no pesa nada. */
+export async function listarHistorialCompaneros(): Promise<ParConNombres[]> {
+  const [pares, { data: jugadores, error }] = await Promise.all([
+    obtenerHistorialPares(),
+    supabase.from('jugadores').select('id, nombre, apellidos'),
+  ]);
+  if (error) throw error;
+  const nombrePorId = new Map(
+    (jugadores ?? []).map((j) => [j.id as string, `${j.nombre} ${j.apellidos ?? ''}`.trim()])
+  );
+  return pares
+    .map((p) => ({
+      nombreA: nombrePorId.get(p.jugadorA) ?? '(jugador dado de baja)',
+      nombreB: nombrePorId.get(p.jugadorB) ?? '(jugador dado de baja)',
+      veces: p.veces,
+    }))
+    .sort((a, b) => b.veces - a.veces);
 }
 
 export async function guardarEquipos(
@@ -185,6 +223,12 @@ export async function obtenerEstadisticas(jugadorId: string): Promise<Estadistic
     .maybeSingle();
   if (error) throw error;
   return data as EstadisticasJugador | null;
+}
+
+export async function listarEstadisticas(): Promise<EstadisticasJugador[]> {
+  const { data, error } = await supabase.from('vista_estadisticas_jugadores').select('*');
+  if (error) throw error;
+  return (data ?? []) as EstadisticasJugador[];
 }
 
 export type { Inscripcion };

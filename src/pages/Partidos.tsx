@@ -9,6 +9,7 @@ import { useAuth } from '../hooks/useAuth';
 import { listarPartidos } from '../lib/partidos';
 import type { PartidoConContador } from '../types/database';
 import { PartidoCard } from '../components/PartidoCard';
+import { IconBalon } from '../components/icons';
 
 type Pestaña = 'proximos' | 'pasados';
 
@@ -34,7 +35,10 @@ export function Partidos() {
   return (
     <div className="mx-auto min-h-screen max-w-sm px-6 py-10">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-2xl uppercase tracking-wide text-chalk">Partidos</h1>
+        <h1 className="flex items-center gap-2 font-display text-2xl uppercase tracking-wide text-chalk">
+          <IconBalon className="h-6 w-6 text-floodlight" />
+          Partidos
+        </h1>
         {esAdmin && (
           <Link
             to="/partidos/nuevo"

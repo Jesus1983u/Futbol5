@@ -1,14 +1,12 @@
 # Fútbol 5 — App de gestión de partidos
 
-Proyecto completo en sus cinco fases: base de datos, generador de
-equipos, sistema de rating, login sin contraseña, perfil de jugador,
-partidos e inscripciones, pagos y bloqueo de deuda, y ahora también el
-**panel de administrador** (Fase 5) — gestión de jugadores, registrar
-el resultado de un partido jugado (dispara el cambio de rating), y la
-votación inicial de ranking para arrancar el grupo desde cero. Con
-esto quedan cubiertos los cuatro bloques que planteaste al principio;
-al final del documento dejo algunas ideas de pulido por si quieres
-seguir afinando algo.
+Proyecto completo en sus cinco fases, más una ronda de ajustes después
+de probarlo de verdad: login por teléfono + contraseña con cada cuenta
+creada por ti (sin alta por cuenta propia), votación que se bloquea
+tras enviarla, clasificación general por puntos, historial de
+compañeros visible, nivel estimado al crear invitados, y algún detalle
+visual más. Ver "Cómo funciona el login" y "Clasificación, historial y
+mejoras en invitados" más abajo para el detalle de cada cosa.
 
 ## Qué hay aquí
 
@@ -24,6 +22,7 @@ src/lib/pagos.ts                    → acceso a datos de pagos pendientes y mar
 src/lib/admin.ts                    → acceso a datos del panel de administrador
 src/lib/votacion.ts                 → acceso a datos de la votación del ranking inicial
 src/lib/fecha.ts                    → formato de fechas en español
+src/components/icons.tsx            → iconos de trazo simple para títulos y navegación
 src/lib/teamGenerator.ts            → generador de equipos equilibrados (fuerza bruta + heurística)
 src/lib/elo.ts                      → sistema de rating estilo Elo, escala 0-100
 
@@ -32,7 +31,6 @@ src/hooks/useAuth.ts                → hook de conveniencia sobre el contexto a
 src/components/RequireAuth.tsx      → protege rutas que necesitan sesión iniciada
 src/components/RequireAdmin.tsx     → protege rutas solo para el administrador
 src/components/AppLayout.tsx        → barra de pestañas inferior (Partidos / Mi perfil)
-src/components/ScoreboardCodeInput.tsx → input del código de 6 dígitos (estilo marcador de estadio)
 src/components/Avatar.tsx           → iniciales en círculo, reutilizado en perfil y convocatoria
 src/components/EstadoBadge.tsx      → insignia de estado de un partido
 src/components/PartidoCard.tsx      → tarjeta de partido en la lista
@@ -49,6 +47,8 @@ src/pages/CrearPartido.tsx          → formulario de admin para programar un pa
 src/pages/Pagos.tsx                 → vista de admin: deuda pendiente agrupada por jugador
 src/pages/AdminPanel.tsx            → gestión de jugadores + revisión del ranking inicial
 src/pages/Votacion.tsx              → cualquiera ordena al resto del grupo de mejor a peor
+src/pages/Clasificacion.tsx         → la general del grupo, puntos por victoria/empate/derrota
+src/pages/Historial.tsx             → con quién ha jugado más veces cada cual
 src/App.tsx, src/main.tsx           → arranque de la app y rutas
 
 examples/demo-generador-equipos.ts  → ejemplo ejecutable del generador de equipos
@@ -162,57 +162,134 @@ fallaba, simplemente no le cambiaba el rating a nadie, en silencio.
 Ahora lo exige explícitamente y la pantalla de "Registrar resultado"
 ni siquiera te deja intentarlo hasta que los equipos están listos.
 
-Segunda: no había ninguna forma de corregir un voto ya emitido en la
-votación del ranking — no existía política para borrar ni actualizar
-filas de `rankings_iniciales`, así que si alguien cambiaba de opinión
-sobre el orden, se quedaba atascado. Añadí `fn_guardar_votacion`, que
-sustituye por completo la votación anterior de quien la llama (nunca
-la de otra persona) por la nueva, así que ahora se puede volver a
-`/votacion` y reordenar cuando se quiera.
+Segunda: en la primera versión, cualquiera podía volver a `/votacion`
+y reordenar su voto entero cuando quisiera — útil para corregir un
+error, pero abierto a que alguien fuera cambiando su voto después de
+ver cómo iba quedando el grupo. Ahora el voto se bloquea en cuanto se
+envía: ya no se puede tocar a nadie que estuviera en esa lista. La
+única excepción es cuando añades a alguien nuevo al grupo después de
+que la gente ya hubiera votado — esa persona nueva aparece suelta, con
+sus propias flechas, para que cada votante la encaje donde corresponda
+sin poder mover a nadie más de su lista ya enviada. Por debajo sigue
+siendo la misma `fn_guardar_votacion` (sustituye el voto entero), pero
+ahora la pantalla decide cuándo dejarte usarla según si hay alguien
+nuevo sin clasificar.
+
+## Clasificación, historial y mejoras en invitados
+
+**Clasificación** (`/clasificacion`, enlazada desde el perfil) es la
+general del grupo como una tabla de liga: puntos por victoria/empate/
+derrota, no el rating Elo — son dos cosas a propósito distintas. El
+rating mide nivel para repartir equipos parejos; la clasificación es
+solo "quién ha sumado más puntos jugando", como cualquier liga de
+barrio. La puse en 3 puntos por victoria y 1 por empate (el convenio
+del fútbol moderno desde 1981); si prefieres el clásico 2-1-0, es una
+constante en `src/pages/Clasificacion.tsx` (`PUNTOS_VICTORIA`) — dime
+y la cambio.
+
+**Historial** (`/historial`, también enlazada desde el perfil) hace
+visible la tabla `historial_companeros` que ya alimentaba al
+generador de equipos por debajo: cuántas veces ha coincidido cada
+pareja en el mismo equipo, de más a menos.
+
+**Al crear un invitado** (botón "+ Añadir jugador" dentro de un
+partido) ahora puedes ponerle un nivel estimado (0-100, 50 por
+defecto) para que el generador de equipos lo tenga en cuenta desde el
+primer partido, en vez de arrancar siempre en el 50 por defecto de
+cualquier jugador nuevo. También puedes ponerle un email, opcional:
+si lo haces, el día que esa persona entre por su cuenta en la app con
+ese mismo correo, se vincula sola y pasa a registrada sin perder nada
+de su historial — es el mismo mecanismo de siempre
+(`fn_completar_registro`), que hasta ahora nunca se podía disparar
+para los invitados creados desde aquí porque no se les pedía el email.
+
+**Convertir a un invitado en jugador habitual a mano:** en el panel de
+Admin → Jugadores → Editar, ahora hay un desplegable para pasar el
+"tipo" de invitado a registrado directamente, sin esperar a que esa
+persona entre nunca por su cuenta. Eso no le da acceso a la app por sí
+solo (sigue sin poder entrar si no tiene email y nunca inicia sesión)
+— es solo para marcarlo como habitual desde ya en las estadísticas y
+en cómo se le trata en el resto de la app.
 
 ## Cómo funciona el login
 
-Sin contraseñas: escribes tu email, te llega un código de 6 dígitos,
-lo introduces y ya estás dentro. Esto se apoya en Supabase Auth
-(`signInWithOtp` + `verifyOtp`), igual que ya usas en la intranet de
-facturación.
+Teléfono + contraseña, y tú creas cada cuenta a mano. No hay alta por
+cuenta propia: nadie puede registrarse solo con el enlace, ni con
+ningún código — si no le has creado la cuenta, no entra. Es el cambio
+que pediste en la última ronda, en vez del código de invitación que
+había antes (esa función, `fn_codigo_invitacion_valido`, se queda en
+el esquema sin usar, por si la quieres recuperar algún día — no hace
+ningún mal ahí parada).
 
-Justo después de verificar el código, la app llama a la función SQL
-`fn_completar_registro()` (nueva en esta entrega, en `schema.sql`),
-que decide qué fila de `jugadores` corresponde a esa persona:
+**Cómo das de alta a alguien:**
+
+1. Supabase → **Authentication → Users → "Add user"**.
+2. Rellena **Phone** con el número en formato internacional, por
+   ejemplo `+34612345678` (el prefijo `+34` es obligatorio para que
+   Supabase lo reconozca).
+3. Pon la **contraseña** que le quieras asignar — dísela tú a esa
+   persona, por el medio que prefieras (WhatsApp, en persona...).
+4. Marca **"Auto Confirm User"**. Esto es importante: sin marcarlo,
+   Supabase intentaría mandar un SMS de verificación, y como no hay
+   ningún proveedor de SMS configurado (cuesta dinero y no hace falta
+   para este caso), el alta se quedaría a medias.
+5. Crear. Ya puede entrar con ese teléfono y esa contraseña.
+
+Si quieres que el nombre le aparezca bien desde el primer momento (en
+vez de un nombre provisional que tenga que cambiar él mismo luego),
+puedes crearlo antes como invitado desde dentro de un partido (botón
+"+ Añadir jugador" → "Teléfono") con el mismo número — en cuanto esa
+persona inicie sesión, la app lo reconoce por el teléfono y lo vincula
+solo, conservando cualquier historial que ya tuviera como invitado.
+
+**Por debajo:** la pantalla llama a `supabase.auth.signInWithPassword
+({ phone, password })`. Si escribes el número sin el `+34` delante, la
+propia pantalla de login se lo añade automáticamente — así cualquiera
+puede escribir su móvil tal cual lo diría en voz alta, sin pensar en
+prefijos internacionales.
+
+Justo después de entrar, la app llama a la función SQL
+`fn_completar_registro()` (en `schema.sql`), que decide qué fila de
+`jugadores` corresponde a esa persona — por teléfono si entró por
+teléfono, por email si entró por el camino de respaldo de abajo:
 
 1. Si ya tenía una cuenta vinculada, la recupera tal cual.
-2. Si el administrador ya le había dado de alta como invitado (por
-   ejemplo al añadirlo a un partido) con ese mismo email, la vincula y
-   la pasa a "registrado" — conservando intacto su historial,
-   estadísticas y rating, igual que `fn_convertir_invitado` pero en
-   modo autoservicio.
-3. Si no existe ningún jugador con ese email, crea uno nuevo con un
-   nombre provisional (la parte de antes de la @) que la persona
-   puede cambiar en su perfil.
+2. Si ya le habías dado de alta como invitado con ese mismo teléfono
+   (o email), la vincula y la pasa a "registrado" — conservando
+   intacto su historial, estadísticas y rating.
+3. Si no existe ningún jugador con ese teléfono/email, crea uno nuevo
+   con un nombre provisional que la persona puede cambiar en su
+   perfil.
 
-Así cualquiera puede entrar por primera vez sin que tengas que crear
-cuentas a mano una por una, pero si ya le habías metido como invitado
-en un partido anterior, no pierde nada de su historial al registrarse.
+**Vía de respaldo por email, para tu propia continuidad.** Como tu
+cuenta de pruebas de las primeras fases se creó por email, dejé un
+enlace pequeño en el login, "Entrar con email", que sigue funcionando
+con `email + contraseña` exactamente igual que antes. No es el camino
+pensado para el grupo — ellos solo tienen teléfono — pero así no te
+quedas tú mismo sin entrar el día que cambies de móvil o se borre el
+almacenamiento del navegador.
 
-### Configuración necesaria en el panel de Supabase
+### Si ya tenías el esquema de antes desplegado en Supabase
 
-Por defecto, la plantilla de email de Supabase para el login manda un
-**enlace** ("Magic Link"), no un código de 6 dígitos. Para que la
-pantalla de código funcione como está diseñada, hay que tocar una
-cosa en el panel:
+Esto es importante y solo aplica una vez: como tu proyecto de Supabase
+ya está en marcha con datos reales, no puedes simplemente volver a
+pegar `schema.sql` entero — el `create table jugadores` fallaría
+porque la tabla ya existe. Para esta ronda hacen falta dos pasos en el
+SQL Editor, en este orden:
 
-1. Ve a **Authentication → Email Templates → Magic Link**.
-2. Cambia el cuerpo del email para que muestre `{{ .Token }}` en vez
-   del enlace `{{ .ConfirmationURL }}` (por ejemplo: *"Tu código de
-   acceso es: {{ .Token }}"*).
-3. Con el plan gratuito de Supabase, el envío de emails tiene un
-   límite bajo (pensado para pruebas, no para uso real con varios
-   jugadores). Si esto te da problemas cuando lo probéis entre varios,
-   te recomiendo configurar un SMTP propio en **Authentication →
-   SMTP Settings** — Resend (que ya mencionaba para el recordatorio
-   24h) sirve perfectamente para esto también, y así reutilizas la
-   misma cuenta para ambas cosas.
+1. Primero, la columna nueva, suelta (esto no está en ningún
+   `create table`, es un `alter table` aparte):
+   ```sql
+   alter table jugadores add column telefono text;
+   ```
+2. Después, vuelve a pegar solo la función `fn_completar_registro()`
+   completa desde `schema.sql` — `create or replace function` sí se
+   puede repetir sin problema sobre una base de datos ya en marcha,
+   sustituye la versión anterior sin tocar nada más.
+
+Con eso, tu base de datos queda al día sin perder nada de lo que ya
+tenías. Para despliegues nuevos desde cero, `schema.sql` ya incluye la
+columna en el sitio de siempre, así que no hace falta este paso.
 
 ## Decisiones de diseño visual
 
@@ -242,12 +319,16 @@ sobre Workers en vez de Pages — `wrangler.toml` ya está listo para
 eso. Si prefieres Pages igualmente, el frontend funciona igual — solo
 cambia dónde vive el cron del recordatorio.
 
-**Login sin contraseña en vez de email+contraseña.** El encargo no
-especificaba el mecanismo exacto de login, solo que hubiera roles
-admin/jugador. Elijo código de un solo uso por email porque es lo que
-ya usas en la intranet de facturación, no hay contraseñas que la
-gente olvide, y para un grupo de amigos es más sencillo que gestionar
-altas y recuperación de contraseña.
+**Login por teléfono + contraseña, creado por el admin (cambiado en
+esta ronda).** El encargo no especificaba el mecanismo exacto de
+login, solo que hubiera roles admin/jugador. Empecé con código de un
+solo uso por email, sin contraseñas, porque es lo que ya usas en la
+intranet de facturación y evita gestionar altas y recuperación de
+contraseña — pero pediste más control sobre quién entra, así que pasé
+a que tú crees cada cuenta a mano (teléfono + contraseña que tú
+asignas, sin alta por cuenta propia). Sigue sin haber recuperación de
+contraseña automática: si alguien la olvida, tienes que cambiársela tú
+desde el panel de Supabase, igual que al crearla.
 
 **Una sola tabla `jugadores` para registrados e invitados.** El
 encargo separaba "Usuarios" e "Invitados" en dos tablas. Lo unifico en
@@ -324,34 +405,61 @@ que ya ha coincidido 25 veces.
    `schema.sql`. Se ejecuta de una sola vez: crea los tipos, las
    tablas, los índices, las funciones (incluida la nueva
    `fn_completar_registro`) y las políticas de seguridad (RLS).
-3. Configura la plantilla de email como se explica arriba en
-   "Configuración necesaria en el panel de Supabase".
-4. Date de alta tú mismo entrando por `/login` con tu email — la app
-   te creará automáticamente un jugador. Luego, en el SQL Editor,
-   sube tu propia fila a administrador:
+3. Date de alta a ti mismo: Supabase → **Authentication → Users →
+   "Add user"**, con tu teléfono (formato `+34...`), una contraseña
+   que tú elijas, y **"Auto Confirm User"** marcado. Entra con eso por
+   `/login` — la app te creará automáticamente tu fila de jugador.
+   Luego, en el SQL Editor, sube esa fila a administrador:
    ```sql
-   update jugadores set rol = 'admin' where email = 'tu-email@ejemplo.com';
+   update jugadores set rol = 'admin' where telefono = '+34TUNUMERO';
    ```
+4. Para cada persona del grupo, repite el primer paso del punto 3
+   (Authentication → Users → Add user, con su teléfono y una
+   contraseña que tú le asignes) — el detalle completo está en "Cómo
+   funciona el login" más arriba.
 5. Copia `.env.example` a `.env` con la URL y la anon key de tu
-   proyecto (Project Settings → API) para correr la app en local, y
-   las mismas variables como "Environment Variables" en Cloudflare
-   cuando despliegues el Worker.
+   proyecto (Project Settings → API). Esto es lo único que necesitas
+   para `npm run dev` en local **y** para desplegar: al hacer
+   `npm run build`, Vite lee el `.env` y deja esos valores ya escritos
+   dentro del JavaScript compilado. No hace falta (ni sirve) añadirlos
+   como "Environment Variables" en el panel de Cloudflare — al ser un
+   Worker de solo archivos estáticos, esas variables de Cloudflare
+   solo las vería código que corra en el propio Worker, no el
+   JavaScript que se le sirve al navegador.
+6. `npm run build` y luego `npx wrangler login` (la primera vez, para
+   autorizar wrangler contra tu cuenta de Cloudflare) y `npx wrangler
+   deploy`. Te da una URL del tipo
+   `futbol5-app.tu-usuario.workers.dev` para compartir con el grupo.
 
 ## Qué falta (roadmap)
 
 Los cuatro bloques que planteaste al principio están construidos:
 autenticación y perfiles, partidos e inscripciones, pagos y bloqueo de
-deuda, y panel de administrador. Lo único que se quedó fuera desde la
-Fase 1, porque era una decisión aparte (notificaciones por email), es
-montar el Cloudflare Worker con Cron Trigger que llame a
-`fn_partidos_para_recordatorio()` 24h antes de cada partido y dispare
-los emails vía Resend — la función SQL ya está lista, solo falta el
-Worker que la invoque y la integración con Resend.
+deuda, y panel de administrador. Las dos decisiones pendientes de la
+ronda anterior ya están resueltas: 3 puntos por victoria / 1 por
+empate en la clasificación, y login por teléfono + contraseña con
+cada cuenta creada por ti.
+
+**Antes de dar el enlace a nadie del grupo:** si ya tenías el esquema
+desplegado, no olvides el paso de migración de "Si ya tenías el
+esquema de antes desplegado en Supabase" (la columna `telefono` nueva
++ volver a pegar `fn_completar_registro`) — sin eso, el login por
+teléfono no tiene dónde guardar el número.
+
+Lo único que se quedó fuera desde la Fase 1, porque era una decisión
+aparte (notificaciones por email), es montar el Cloudflare Worker con
+Cron Trigger que llame a `fn_partidos_para_recordatorio()` 24h antes
+de cada partido y dispare los emails vía Resend — la función SQL ya
+está lista, solo falta el Worker que la invoque y la integración con
+Resend. Si en algún momento quieres ir más allá y que tú mismo puedas
+crear cuentas nuevas desde dentro de la app (en vez de entrar al
+panel de Supabase cada vez), eso necesitaría un endpoint propio en el
+Worker de Cloudflare que use la "service role key" de Supabase — una
+pieza más, con su propia clave secreta que nunca puede llegar al
+navegador. Dímelo si te interesa y lo monto como su propia fase.
 
 Más allá de eso, todo lo que viene ahora es pulido sobre lo que ya
 funciona: probarlo con el grupo real, ver qué fricciones aparecen
 sobre el terreno, y ajustar lo que haga falta — el ritmo de cambio del
 rating, el diseño visual, lo que sea. Dime qué tal va cuando lo
 probéis.
-#   F u t b o l 5  
- 

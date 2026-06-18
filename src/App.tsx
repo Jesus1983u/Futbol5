@@ -11,6 +11,8 @@ import { CrearPartido } from './pages/CrearPartido';
 import { Pagos } from './pages/Pagos';
 import { AdminPanel } from './pages/AdminPanel';
 import { Votacion } from './pages/Votacion';
+import { Clasificacion } from './pages/Clasificacion';
+import { Historial } from './pages/Historial';
 
 export default function App() {
   return (
@@ -53,6 +55,8 @@ export default function App() {
               }
             />
             <Route path="/votacion" element={<Votacion />} />
+            <Route path="/clasificacion" element={<Clasificacion />} />
+            <Route path="/historial" element={<Historial />} />
             <Route path="/perfil" element={<Perfil />} />
           </Route>
 

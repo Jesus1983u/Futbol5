@@ -13,6 +13,8 @@ export function AnadirJugadorAdmin({ partidoId, yaInscritos, onAnadido }: Anadir
   const [jugadores, setJugadores] = useState<Jugador[]>([]);
   const [seleccionado, setSeleccionado] = useState('');
   const [nombreInvitado, setNombreInvitado] = useState('');
+  const [telefonoInvitado, setTelefonoInvitado] = useState('');
+  const [ratingInvitado, setRatingInvitado] = useState('50');
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,13 +43,21 @@ export function AnadirJugadorAdmin({ partidoId, yaInscritos, onAnadido }: Anadir
     setError(null);
     setEnviando(true);
     try {
-      const invitado = await crearInvitado(nombreInvitado.trim());
+      const rating = Number(ratingInvitado);
+      const invitado = await crearInvitado(
+        nombreInvitado.trim(),
+        Number.isNaN(rating) ? undefined : rating,
+        undefined,
+        telefonoInvitado.trim() || undefined
+      );
       const { error } = await inscribirse(partidoId, invitado.id, true);
       if (error) {
         setError(error);
         return;
       }
       setNombreInvitado('');
+      setTelefonoInvitado('');
+      setRatingInvitado('50');
       onAnadido();
     } catch {
       setError('No se pudo crear el invitado.');
@@ -98,6 +108,24 @@ export function AnadirJugadorAdmin({ partidoId, yaInscritos, onAnadido }: Anadir
           placeholder="Nombre de un invitado nuevo"
           className="flex-1 rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm text-chalk placeholder:text-muted"
         />
+        <input
+          type="number"
+          min="0"
+          max="100"
+          value={ratingInvitado}
+          onChange={(e) => setRatingInvitado(e.target.value)}
+          title="Nivel estimado (0-100)"
+          className="w-16 rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm tabular-nums text-chalk"
+        />
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="tel"
+          value={telefonoInvitado}
+          onChange={(e) => setTelefonoInvitado(e.target.value)}
+          placeholder="Teléfono (opcional, para su cuenta luego)"
+          className="flex-1 rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm text-chalk placeholder:text-muted"
+        />
         <button
           onClick={() => void añadirInvitadoNuevo()}
           disabled={!nombreInvitado.trim() || enviando}
@@ -106,6 +134,12 @@ export function AnadirJugadorAdmin({ partidoId, yaInscritos, onAnadido }: Anadir
           Crear y añadir
         </button>
       </div>
+      <p className="font-body text-xs text-muted">
+        El número junto al nombre es su nivel estimado (0-100, 50 = medio) — así el generador de
+        equipos lo tiene en cuenta desde el primer partido. Si le pones el teléfono y luego le
+        creas la cuenta con ese mismo número (Supabase → Authentication → Users), se vincula solo
+        en cuanto entre y pasa a "jugador habitual" sin perder nada de este historial.
+      </p>
 
       {error && <p className="font-body text-sm text-danger">{error}</p>}
 

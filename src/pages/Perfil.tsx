@@ -11,6 +11,7 @@ import { obtenerEstadisticas } from '../lib/partidos';
 import { listarPagosPendientesDe } from '../lib/pagos';
 import { Avatar } from '../components/Avatar';
 import { formatearFechaCorta } from '../lib/fecha';
+import { IconGrupo, IconTrofeo, IconUrna } from '../components/icons';
 import type { EstadisticasJugador, PagoPendiente, Posicion } from '../types/database';
 
 export function Perfil() {
@@ -183,12 +184,29 @@ export function Perfil() {
         </button>
       </form>
 
-      <Link
-        to="/votacion"
-        className="mt-6 block text-center font-body text-sm text-muted hover:text-chalk"
-      >
-        Votar el ranking inicial del grupo
-      </Link>
+      <div className="mt-6 space-y-2 text-center">
+        <Link
+          to="/clasificacion"
+          className="flex items-center justify-center gap-1.5 font-body text-sm text-muted hover:text-chalk"
+        >
+          <IconTrofeo className="h-4 w-4" />
+          Ver la clasificación general
+        </Link>
+        <Link
+          to="/historial"
+          className="flex items-center justify-center gap-1.5 font-body text-sm text-muted hover:text-chalk"
+        >
+          <IconGrupo className="h-4 w-4" />
+          Ver el historial de compañeros
+        </Link>
+        <Link
+          to="/votacion"
+          className="flex items-center justify-center gap-1.5 font-body text-sm text-muted hover:text-chalk"
+        >
+          <IconUrna className="h-4 w-4" />
+          Votar el ranking inicial del grupo
+        </Link>
+      </div>
     </div>
   );
 }

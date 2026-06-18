@@ -15,6 +15,7 @@ import {
 } from '../lib/admin';
 import type { Jugador, Posicion, RolUsuario } from '../types/database';
 import { Avatar } from '../components/Avatar';
+import { IconEngranaje } from '../components/icons';
 
 type Pestaña = 'jugadores' | 'ranking';
 
@@ -23,7 +24,8 @@ export function AdminPanel() {
 
   return (
     <div className="mx-auto min-h-screen max-w-sm px-6 py-10">
-      <h1 className="font-display text-2xl uppercase tracking-wide text-chalk">
+      <h1 className="flex items-center gap-2 font-display text-2xl uppercase tracking-wide text-chalk">
+        <IconEngranaje className="h-6 w-6 text-floodlight" />
         Panel de administrador
       </h1>
 
@@ -138,8 +140,10 @@ function FormularioJugador({
 }) {
   const [nombre, setNombre] = useState(jugador.nombre);
   const [apellidos, setApellidos] = useState(jugador.apellidos ?? '');
+  const [telefono, setTelefono] = useState(jugador.telefono ?? '');
   const [posicion, setPosicion] = useState<Posicion>(jugador.posicion_preferida);
   const [rol, setRol] = useState<RolUsuario>(jugador.rol);
+  const [tipo, setTipo] = useState(jugador.tipo);
   const [activo, setActivo] = useState(jugador.activo);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,8 +154,10 @@ function FormularioJugador({
     const { error } = await actualizarJugadorAdmin(jugador.id, {
       nombre: nombre.trim(),
       apellidos: apellidos.trim() || null,
+      telefono: telefono.trim() || null,
       posicion_preferida: posicion,
       rol,
+      tipo,
       activo,
     });
     setGuardando(false);
@@ -179,6 +185,14 @@ function FormularioJugador({
         />
       </div>
 
+      <input
+        type="tel"
+        value={telefono}
+        onChange={(e) => setTelefono(e.target.value)}
+        placeholder="Teléfono (con prefijo, ej. +34612345678)"
+        className="w-full rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm text-chalk"
+      />
+
       <div className="grid grid-cols-2 gap-2">
         <select
           value={posicion}
@@ -196,6 +210,23 @@ function FormularioJugador({
           <option value="jugador">Jugador</option>
           <option value="admin">Admin</option>
         </select>
+      </div>
+
+      <div>
+        <select
+          value={tipo}
+          onChange={(e) => setTipo(e.target.value as Jugador['tipo'])}
+          className="w-full rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm capitalize text-chalk"
+        >
+          <option value="invitado">Invitado</option>
+          <option value="registrado">Jugador habitual (registrado)</option>
+        </select>
+        <p className="mt-1 font-body text-xs text-muted">
+          Pasar a "Jugador habitual" no le da acceso por sí solo a entrar en la app — eso pasa
+          automáticamente en cuanto esa persona inicie sesión con el email que tenga puesto aquí.
+          Este interruptor es solo para marcarlo como habitual desde ya, aunque todavía no haya
+          entrado nunca.
+        </p>
       </div>
 
       <label className="flex items-center gap-2 font-body text-sm text-chalk">

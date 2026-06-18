@@ -6,6 +6,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { crearPartido } from '../lib/partidos';
+import { IconMas } from '../components/icons';
 
 export function CrearPartido() {
   const { jugador } = useAuth();
@@ -46,7 +47,10 @@ export function CrearPartido() {
 
   return (
     <div className="mx-auto min-h-screen max-w-sm px-6 py-10">
-      <h1 className="font-display text-2xl uppercase tracking-wide text-chalk">Nuevo partido</h1>
+      <h1 className="flex items-center gap-2 font-display text-2xl uppercase tracking-wide text-chalk">
+        <IconMas className="h-6 w-6 text-floodlight" />
+        Nuevo partido
+      </h1>
 
       <form onSubmit={manejarEnvio} className="mt-6 space-y-4">
         <div className="grid grid-cols-2 gap-3">

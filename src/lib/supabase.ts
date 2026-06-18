@@ -29,15 +29,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    // En el plan gratuito de Supabase no se pueden personalizar las
-    // plantillas de email (asunto/cuerpo) sin configurar un SMTP propio
-    // — por eso el email de login llega con el enlace de fábrica en vez
-    // del código de 6 dígitos que diseñamos. Mientras no haya un SMTP
-    // configurado (ver README), dejamos `detectSessionInUrl` en true
-    // para que ese enlace de fábrica funcione igual: al pulsarlo, vuelve
-    // a esta app con la sesión ya iniciada. El paso de introducir el
-    // código (ScoreboardCodeInput) sigue ahí y funcionará tal cual en
-    // cuanto se configure el SMTP y se edite la plantilla.
+    // El login es por teléfono/email + contraseña (ver AuthContext.tsx),
+    // no por enlace de email, así que esto no debería entrar en juego en
+    // el uso normal. Se deja en true por si alguna vez se reactiva algún
+    // flujo basado en enlaces (recuperar contraseña, por ejemplo).
     detectSessionInUrl: true,
   },
 });

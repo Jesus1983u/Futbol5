@@ -10,6 +10,7 @@ import { listarPagosPendientes, marcarPago } from '../lib/pagos';
 import type { PagoPendiente } from '../types/database';
 import { formatearFechaCorta } from '../lib/fecha';
 import { Avatar } from '../components/Avatar';
+import { IconMoneda } from '../components/icons';
 
 interface GrupoDeudor {
   jugadorId: string;
@@ -55,7 +56,10 @@ export function Pagos() {
 
   return (
     <div className="mx-auto min-h-screen max-w-sm px-6 py-10">
-      <h1 className="font-display text-2xl uppercase tracking-wide text-chalk">Pagos</h1>
+      <h1 className="flex items-center gap-2 font-display text-2xl uppercase tracking-wide text-chalk">
+        <IconMoneda className="h-6 w-6 text-floodlight" />
+        Pagos
+      </h1>
       <p className="mt-1 font-body text-sm text-muted">
         Solo se cuentan partidos ya jugados y todavía sin marcar como pagados.
       </p>

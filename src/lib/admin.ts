@@ -24,8 +24,10 @@ export async function listarTodosLosJugadores(): Promise<Jugador[]> {
 export interface CambiosJugadorAdmin {
   nombre: string;
   apellidos: string | null;
+  telefono: string | null;
   posicion_preferida: Jugador['posicion_preferida'];
   rol: RolUsuario;
+  tipo: Jugador['tipo'];
   activo: boolean;
 }
 
