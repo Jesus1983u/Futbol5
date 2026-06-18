@@ -76,9 +76,9 @@ export function Clasificacion() {
               className="grid grid-cols-[1.5rem_1fr_2.25rem_2.25rem_2.25rem_2.25rem_3rem] items-center gap-1 border-t border-pitch-line px-2 py-2"
             >
               <span className="font-display text-sm tabular-nums text-muted">{indice + 1}</span>
-              <span className="flex items-center gap-2 truncate">
+              <span className="flex min-w-0 items-center gap-2">
                 <Avatar nombre={f.nombre} apellidos={f.apellidos} />
-                <span className="truncate font-body text-sm text-chalk">
+                <span className="min-w-0 flex-1 truncate font-body text-sm text-chalk">
                   {f.nombre} {f.apellidos}
                 </span>
               </span>

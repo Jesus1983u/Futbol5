@@ -45,6 +45,7 @@ create table jugadores (
   email text,
   telefono text,
   posicion_preferida posicion_jugador not null default 'defensor',
+  posicion_confirmada boolean not null default false,
 
   rating_actual numeric(5,2) not null default 50,
   rating_inicial_confirmado boolean not null default false,

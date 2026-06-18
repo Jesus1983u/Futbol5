@@ -12,7 +12,7 @@ import { listarPagosPendientesDe } from '../lib/pagos';
 import { Avatar } from '../components/Avatar';
 import { formatearFechaCorta } from '../lib/fecha';
 import { IconGrupo, IconTrofeo, IconUrna } from '../components/icons';
-import type { EstadisticasJugador, PagoPendiente, Posicion } from '../types/database';
+import type { EstadisticasJugador, Jugador, PagoPendiente, Posicion } from '../types/database';
 
 export function Perfil() {
   const { jugador, esAdmin, cerrarSesion, actualizarJugador } = useAuth();
@@ -42,22 +42,26 @@ export function Perfil() {
     );
   }
 
-  async function guardar(evento: FormEvent) {
+  const guardar = async (evento: FormEvent) => {
     evento.preventDefault();
     setMensaje(null);
     setGuardando(true);
-    const { error } = await actualizarJugador({
+    const cambios: Partial<Jugador> = {
       nombre: nombre.trim(),
       apellidos: apellidos.trim() || null,
-      posicion_preferida: posicion,
-    });
+    };
+    if (!jugador.posicion_confirmada) {
+      cambios.posicion_preferida = posicion;
+      cambios.posicion_confirmada = true;
+    }
+    const { error } = await actualizarJugador(cambios);
     setGuardando(false);
     setMensaje(
       error
         ? { tipo: 'error', texto: 'No se pudieron guardar los cambios. Inténtalo de nuevo.' }
         : { tipo: 'ok', texto: 'Cambios guardados.' }
     );
-  }
+  };
 
   return (
     <div className="mx-auto min-h-screen max-w-sm px-6 py-10">
@@ -149,22 +153,39 @@ export function Perfil() {
 
         <div>
           <p className="block font-body text-sm text-muted">Posición preferida</p>
-          <div className="mt-1 grid grid-cols-2 gap-2">
-            {(['atacante', 'defensor'] as const).map((opcion) => (
-              <button
-                key={opcion}
-                type="button"
-                onClick={() => setPosicion(opcion)}
-                className={`rounded-md border px-3 py-2 font-body text-sm capitalize transition-colors ${
-                  posicion === opcion
-                    ? 'border-floodlight bg-floodlight/10 text-floodlight'
-                    : 'border-pitch-line text-muted hover:text-chalk'
-                }`}
-              >
-                {opcion}
-              </button>
-            ))}
-          </div>
+          {jugador.posicion_confirmada ? (
+            <>
+              <p className="mt-1 rounded-md border border-pitch-line bg-pitch-deep px-3 py-2 font-body text-sm capitalize text-chalk">
+                {posicion}
+              </p>
+              <p className="mt-1 font-body text-xs text-muted">
+                Ya está fijada. Si necesitas cambiarla, pídeselo al administrador.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {(['atacante', 'defensor'] as const).map((opcion) => (
+                  <button
+                    key={opcion}
+                    type="button"
+                    onClick={() => setPosicion(opcion)}
+                    className={`rounded-md border px-3 py-2 font-body text-sm capitalize transition-colors ${
+                      posicion === opcion
+                        ? 'border-floodlight bg-floodlight/10 text-floodlight'
+                        : 'border-pitch-line text-muted hover:text-chalk'
+                    }`}
+                  >
+                    {opcion}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 font-body text-xs text-muted">
+                Elígela con cuidado: en cuanto guardes, queda fijada y no podrás cambiarla tú
+                mismo más adelante.
+              </p>
+            </>
+          )}
         </div>
 
         {mensaje && (

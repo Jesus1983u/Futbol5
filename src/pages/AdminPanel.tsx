@@ -162,7 +162,7 @@ function FormularioJugador({
     });
     setGuardando(false);
     if (error) {
-      setError('No se pudo guardar.');
+      setError(`No se pudo guardar: ${error}`);
       return;
     }
     onGuardado();

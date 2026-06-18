@@ -182,34 +182,54 @@ general del grupo como una tabla de liga: puntos por victoria/empate/
 derrota, no el rating Elo — son dos cosas a propósito distintas. El
 rating mide nivel para repartir equipos parejos; la clasificación es
 solo "quién ha sumado más puntos jugando", como cualquier liga de
-barrio. La puse en 3 puntos por victoria y 1 por empate (el convenio
-del fútbol moderno desde 1981); si prefieres el clásico 2-1-0, es una
-constante en `src/pages/Clasificacion.tsx` (`PUNTOS_VICTORIA`) — dime
-y la cambio.
+barrio. Está en 3 puntos por victoria y 1 por empate, como confirmaste.
+
+*Arreglado:* la fila de cada jugador se veía rota con nombres algo
+largos. La causa era una clase CSS mal puesta — el contenedor del
+avatar+nombre tenía `truncate` (recortar con puntos suspensivos) en el
+sitio que no le correspondía, así que el nombre no se encogía y
+empujaba el resto de la fila fuera de sitio, descolocando toda la
+tabla. Ya corregido. Si después de actualizar sigue viéndose mal,
+mándame una captura nueva de esa pantalla en concreto y lo miro con
+eso delante.
 
 **Historial** (`/historial`, también enlazada desde el perfil) hace
 visible la tabla `historial_companeros` que ya alimentaba al
 generador de equipos por debajo: cuántas veces ha coincidido cada
 pareja en el mismo equipo, de más a menos.
 
+*Mejorado:* con un grupo grande, el número de parejas posibles crece
+muy rápido (combinatorio — 20 jugadores ya dan 190 parejas), así que
+antes había que hacer mucho scroll para verlas todas. Ahora hay un
+buscador por nombre arriba, y por defecto solo se ven las 15 parejas
+que más se repiten, con un botón "Ver todas (N)" para desplegar el
+resto solo si se quiere.
+
 **Al crear un invitado** (botón "+ Añadir jugador" dentro de un
-partido) ahora puedes ponerle un nivel estimado (0-100, 50 por
-defecto) para que el generador de equipos lo tenga en cuenta desde el
-primer partido, en vez de arrancar siempre en el 50 por defecto de
-cualquier jugador nuevo. También puedes ponerle un email, opcional:
-si lo haces, el día que esa persona entre por su cuenta en la app con
-ese mismo correo, se vincula sola y pasa a registrada sin perder nada
-de su historial — es el mismo mecanismo de siempre
-(`fn_completar_registro`), que hasta ahora nunca se podía disparar
-para los invitados creados desde aquí porque no se les pedía el email.
+partido) puedes ponerle un nivel estimado (0-100, 50 por defecto) para
+que el generador de equipos lo tenga en cuenta desde el primer
+partido, en vez de arrancar siempre en el 50 por defecto de cualquier
+jugador nuevo. También puedes ponerle el teléfono, opcional: si lo
+haces, el día que le crees su cuenta con ese mismo número (ver "Cómo
+funciona el login" más abajo), se vincula solo y pasa a registrado sin
+perder nada de su historial.
 
 **Convertir a un invitado en jugador habitual a mano:** en el panel de
-Admin → Jugadores → Editar, ahora hay un desplegable para pasar el
-"tipo" de invitado a registrado directamente, sin esperar a que esa
-persona entre nunca por su cuenta. Eso no le da acceso a la app por sí
-solo (sigue sin poder entrar si no tiene email y nunca inicia sesión)
-— es solo para marcarlo como habitual desde ya en las estadísticas y
-en cómo se le trata en el resto de la app.
+Admin → Jugadores → Editar, hay un desplegable para pasar el "tipo" de
+invitado a registrado directamente, sin esperar a que esa persona
+entre nunca por su cuenta. Eso no le da acceso a la app por sí solo
+(sigue sin poder entrar si no tiene cuenta creada) — es solo para
+marcarlo como habitual desde ya en las estadísticas y en cómo se le
+trata en el resto de la app.
+
+**Posición preferida, bloqueada tras la primera elección.** En "Mi
+perfil", cada jugador elige su posición (atacante/defensor) una sola
+vez — en cuanto la guarda, queda fijada: el selector desaparece y se
+ve como un dato fijo, con una nota explicando que hay que pedírselo al
+administrador para cambiarla. Tú, como administrador, sí puedes
+cambiarla en cualquier momento desde el panel de Admin → Jugadores →
+Editar, para cualquiera (incluido tú mismo) — esa vía no se bloquea
+nunca.
 
 ## Cómo funciona el login
 
@@ -274,13 +294,14 @@ almacenamiento del navegador.
 Esto es importante y solo aplica una vez: como tu proyecto de Supabase
 ya está en marcha con datos reales, no puedes simplemente volver a
 pegar `schema.sql` entero — el `create table jugadores` fallaría
-porque la tabla ya existe. Para esta ronda hacen falta dos pasos en el
-SQL Editor, en este orden:
+porque la tabla ya existe. Para esta ronda hacen falta estos pasos en
+el SQL Editor, en este orden:
 
-1. Primero, la columna nueva, suelta (esto no está en ningún
-   `create table`, es un `alter table` aparte):
+1. Las dos columnas nuevas, sueltas (esto no está en ningún
+   `create table`, son `alter table` aparte):
    ```sql
    alter table jugadores add column telefono text;
+   alter table jugadores add column posicion_confirmada boolean not null default false;
    ```
 2. Después, vuelve a pegar solo la función `fn_completar_registro()`
    completa desde `schema.sql` — `create or replace function` sí se
@@ -288,8 +309,20 @@ SQL Editor, en este orden:
    sustituye la versión anterior sin tocar nada más.
 
 Con eso, tu base de datos queda al día sin perder nada de lo que ya
-tenías. Para despliegues nuevos desde cero, `schema.sql` ya incluye la
-columna en el sitio de siempre, así que no hace falta este paso.
+tenías. Para despliegues nuevos desde cero, `schema.sql` ya incluye
+ambas columnas en el sitio de siempre, así que no hace falta este
+paso.
+
+**Si te falla guardar en el panel de Admin con "No se pudo guardar"
+(activar/desactivar, o pasar de invitado a habitual):** casi seguro es
+justo esto — la columna `telefono` no existe todavía en tu base de
+datos porque falta el paso 1 de arriba. El formulario de edición ahora
+manda ese campo en cada guardado, así que si la columna no está
+creada, Postgres rechaza el `update` entero (no solo la parte del
+teléfono) y por eso parecía que ni siquiera el interruptor de
+activo/inactivo funcionaba. Ahora además, si vuelve a fallar, el
+mensaje rojo te dirá el motivo exacto en vez de un genérico "no se
+pudo guardar" — así si es otra cosa, lo vemos enseguida.
 
 ## Decisiones de diseño visual
 

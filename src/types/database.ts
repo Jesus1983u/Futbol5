@@ -21,6 +21,7 @@ export interface Jugador {
   email: string | null;
   telefono: string | null;
   posicion_preferida: Posicion;
+  posicion_confirmada: boolean;
   rating_actual: number;
   rating_inicial_confirmado: boolean;
   partidos_jugados: number;
