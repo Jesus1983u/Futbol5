@@ -61,40 +61,33 @@ export function Clasificacion() {
 
       {filas && filas.length > 0 && (
         <div className="mt-6 overflow-hidden rounded-lg border border-pitch-line">
-          <div className="grid grid-cols-[1.5rem_1fr_2.25rem_2.25rem_2.25rem_2.25rem_3rem] items-center gap-1 bg-pitch-mid px-2 py-2 font-body text-[11px] uppercase tracking-wide text-muted">
-            <span>#</span>
-            <span>Jugador</span>
-            <span className="text-center">PJ</span>
-            <span className="text-center">V</span>
-            <span className="text-center">E</span>
-            <span className="text-center">D</span>
-            <span className="text-right">Pts</span>
+          <div className="flex items-center gap-2 bg-pitch-mid px-3 py-2 font-body text-[11px] uppercase tracking-wide text-muted">
+            <span className="w-5">#</span>
+            <span className="flex-1">Jugador</span>
+            <span>PJ · V-E-D</span>
+            <span className="w-10 text-right">Pts</span>
           </div>
           {filas.map((f, indice) => (
             <div
               key={f.id}
-              className="grid grid-cols-[1.5rem_1fr_2.25rem_2.25rem_2.25rem_2.25rem_3rem] items-center gap-1 border-t border-pitch-line px-2 py-2"
+              className="flex items-center gap-2 border-t border-pitch-line px-3 py-2.5"
             >
-              <span className="font-display text-sm tabular-nums text-muted">{indice + 1}</span>
-              <span className="flex min-w-0 items-center gap-2">
-                <Avatar nombre={f.nombre} apellidos={f.apellidos} />
-                <span className="min-w-0 flex-1 truncate font-body text-sm text-chalk">
+              <span className="w-5 font-display text-sm tabular-nums text-muted">
+                {indice + 1}
+              </span>
+              <Avatar nombre={f.nombre} apellidos={f.apellidos} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-body text-sm text-chalk">
                   {f.nombre} {f.apellidos}
-                </span>
-              </span>
-              <span className="text-center font-body text-sm tabular-nums text-muted">
-                {f.partidos_jugados}
-              </span>
-              <span className="text-center font-body text-sm tabular-nums text-confirmed">
-                {f.victorias}
-              </span>
-              <span className="text-center font-body text-sm tabular-nums text-muted">
-                {f.empates}
-              </span>
-              <span className="text-center font-body text-sm tabular-nums text-danger">
-                {f.derrotas}
-              </span>
-              <span className="text-right font-display text-sm tabular-nums text-floodlight">
+                </p>
+                <p className="font-body text-xs text-muted">
+                  {f.partidos_jugados} PJ ·{' '}
+                  <span className="text-confirmed">{f.victorias}V</span>-
+                  <span>{f.empates}E</span>-
+                  <span className="text-danger">{f.derrotas}D</span>
+                </p>
+              </div>
+              <span className="w-10 text-right font-display text-base tabular-nums text-floodlight">
                 {f.puntos}
               </span>
             </div>

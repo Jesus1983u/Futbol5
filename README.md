@@ -14,6 +14,7 @@ mejoras en invitados" más abajo para el detalle de cada cosa.
 schema.sql                          → esquema completo de Supabase, listo para pegar en el SQL Editor
 wrangler.toml                       → despliegue en Cloudflare Workers (static assets)
 index.html, vite.config.ts, etc.    → proyecto Vite + React + TypeScript + Tailwind
+public/manifest.json, sw.js, icon-*.png → PWA: instalable en pantalla de inicio
 
 src/types/database.ts               → tipos TypeScript que reflejan las tablas y vistas
 src/lib/supabase.ts                 → cliente de Supabase
@@ -39,7 +40,7 @@ src/components/AnadirJugadorAdmin.tsx → control de admin para añadir jugador/
 src/components/GenerarEquiposPanel.tsx → conecta teamGenerator.ts con la pantalla del partido
 src/components/RegistrarResultado.tsx → admin cierra un partido jugado con su resultado
 
-src/pages/Login.tsx                 → pantalla de login (email → código)
+src/pages/Login.tsx                 → pantalla de login (teléfono + contraseña)
 src/pages/Perfil.tsx                → ver/editar perfil, rating y estadísticas
 src/pages/Partidos.tsx              → lista de partidos (próximos / pasados)
 src/pages/PartidoDetalle.tsx        → ficha de un partido: convocatoria, apuntarse, equipos
@@ -184,14 +185,14 @@ rating mide nivel para repartir equipos parejos; la clasificación es
 solo "quién ha sumado más puntos jugando", como cualquier liga de
 barrio. Está en 3 puntos por victoria y 1 por empate, como confirmaste.
 
-*Arreglado:* la fila de cada jugador se veía rota con nombres algo
-largos. La causa era una clase CSS mal puesta — el contenedor del
-avatar+nombre tenía `truncate` (recortar con puntos suspensivos) en el
-sitio que no le correspondía, así que el nombre no se encogía y
-empujaba el resto de la fila fuera de sitio, descolocando toda la
-tabla. Ya corregido. Si después de actualizar sigue viéndose mal,
-mándame una captura nueva de esa pantalla en concreto y lo miro con
-eso delante.
+*Arreglado (segunda vuelta, con tu captura delante):* la primera
+corrección dejó de romper la tabla, pero el nombre seguía viéndose
+muy cortado porque competía por sitio con cuatro columnas estrechas
+(PJ, V, E, D) en la misma fila. Rehecho con dos líneas por jugador: el
+nombre ahora tiene toda la fila para él en la línea de arriba, y las
+estadísticas (PJ · V-E-D) van más compactas debajo, con los puntos a
+la derecha. Así el nombre ya no se corta salvo que sea realmente muy
+largo.
 
 **Historial** (`/historial`, también enlazada desde el perfil) hace
 visible la tabla `historial_companeros` que ya alimentaba al
@@ -464,6 +465,71 @@ que ya ha coincidido 25 veces.
    deploy`. Te da una URL del tipo
    `futbol5-app.tu-usuario.workers.dev` para compartir con el grupo.
 
+## PWA: instalable en el móvil, sin notificaciones todavía
+
+La app ya se puede "Añadir a pantalla de inicio" como una PWA
+(Progressive Web App): icono propio, abre a pantalla completa sin la
+barra del navegador, y arranca directamente en `/partidos`. No hace
+falta tienda de aplicaciones ni nada que instalar más allá de eso.
+
+Lo que añadí: `public/manifest.json` (nombre, colores, los iconos),
+unos iconos nuevos a juego con la paleta de la app (`public/icon-*.png`
+y `public/apple-touch-icon.png` para iOS) y un service worker mínimo
+(`public/sw.js`) registrado desde `src/main.tsx`.
+
+**Sobre ese service worker, una decisión deliberada:** no cachea nada
+todavía, a propósito. Como cada `npm run build` genera archivos con
+nombres distintos (el hash en `index-XXXX.js`), un service worker que
+guardara en caché el HTML o el JS podría dejar a alguien atascado en
+una versión vieja de la app después de un despliegue nuevo — justo el
+tipo de bug confuso que no quiero meterte, sobre todo sabiendo que
+sueles probar cada cambio justo después de desplegarlo. Por ahora solo
+existe para cumplir el requisito técnico de "tener un service worker
+registrado", que es lo que hace falta para que el navegador ofrezca
+instalar la app. Si en algún momento quieres que funcione algo offline
+de verdad (ver el último partido sin cobertura, por ejemplo), eso se
+puede añadir después con cuidado, idealmente con una librería como
+Workbox que gestiona bien el versionado del caché.
+
+**Cómo probarlo:** despliega esta versión, abre la URL en el móvil
+(Chrome en Android, Safari en iPhone), y debería aparecer la opción de
+instalar — en Android suele salir un aviso automático o la opción
+"Añadir a pantalla de inicio" en el menú; en iPhone es Safari → botón
+de compartir → "Añadir a pantalla de inicio" (ahí no hay aviso
+automático, hay que ir a buscarlo).
+
+**Sobre las notificaciones push** (lo que pedías que avisara de
+partido creado, equipos generados, recordatorio, plaza libre, deuda
+pendiente): esto es un proyecto bastante más grande que la parte
+instalable, y antes de ponerme quiero ser claro contigo sobre lo que
+implica:
+
+- Hace falta una pieza de servidor nueva (un endpoint en el Worker de
+  Cloudflare) con su propia clave criptográfica (VAPID) que nunca
+  puede llegar al navegador — parecido a lo que ya hablamos para el
+  recordatorio 24h por email, pero para empujar notificaciones en vez
+  de mandar correos.
+- Hace falta una tabla nueva en Supabase para guardar la suscripción
+  push de cada móvil (cada dispositivo que acepta notificaciones
+  genera una suscripción distinta que hay que guardar para poder
+  avisarle después).
+- Cada tipo de aviso (partido creado, equipos generados, etc.)
+  necesita su propio disparador — probablemente vía Database Webhooks
+  de Supabase, que pueden llamar a ese endpoint cuando se inserta una
+  fila nueva en `partidos`, por ejemplo.
+- **En iPhone, las notificaciones push solo funcionan si la persona ya
+  se ha instalado la PWA primero** (justo lo de arriba) — no funcionan
+  desde una pestaña normal de Safari. En Android con Chrome funcionan
+  sin necesidad de haberla instalado. Con un grupo de amigos donde
+  seguramente hay varios iPhone, esto es una limitación real que hay
+  que contar de antemano, no un detalle pequeño.
+- Las preferencias por persona (qué avisos quiere recibir cada uno) son
+  la parte fácil, una vez exista todo lo de arriba.
+
+Todo esto es construible, pero es su propia fase, con su propio
+tiempo de pruebas en los dos sistemas — no algo de un día. Te pregunto
+al final cómo quieres seguir con esto.
+
 ## Qué falta (roadmap)
 
 Los cuatro bloques que planteaste al principio están construidos:
@@ -475,9 +541,17 @@ cada cuenta creada por ti.
 
 **Antes de dar el enlace a nadie del grupo:** si ya tenías el esquema
 desplegado, no olvides el paso de migración de "Si ya tenías el
-esquema de antes desplegado en Supabase" (la columna `telefono` nueva
-+ volver a pegar `fn_completar_registro`) — sin eso, el login por
-teléfono no tiene dónde guardar el número.
+esquema de antes desplegado en Supabase" (las columnas `telefono` y
+`posicion_confirmada` nuevas + volver a pegar `fn_completar_registro`)
+— sin eso, el login por teléfono no tiene dónde guardar el número, y
+el panel de Admin falla al guardar cualquier cambio en un jugador.
+
+La app ya se puede instalar como PWA (icono en pantalla de inicio, sin
+notificaciones todavía) — ver "PWA: instalable en el móvil" más
+arriba. Las notificaciones push son la pieza pendiente más grande
+ahora mismo: te pregunto al final de mi respuesta cómo quieres
+abordarlas, porque es un proyecto en sí mismo, con su propia
+infraestructura de servidor y limitaciones reales en iPhone.
 
 Lo único que se quedó fuera desde la Fase 1, porque era una decisión
 aparte (notificaciones por email), es montar el Cloudflare Worker con
