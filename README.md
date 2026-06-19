@@ -235,6 +235,16 @@ nunca.
 
 ## Cómo funciona el login
 
+**Antes de nada — un interruptor que hay que activar una sola vez:**
+Supabase trae el proveedor de teléfono desactivado por defecto. Si al
+intentar entrar (o al crear un usuario) sale el error "Phone logins
+are disabled", es justo esto. Ve a **Authentication → Sign In /
+Providers** (el nombre exacto cambia algo según la versión del panel)
+y activa **Phone**. No hace falta configurar ningún proveedor de SMS
+de pago (Twilio y similares) — aquí no se manda ningún SMS en ningún
+momento, se entra con contraseña, así que con solo activar el
+interruptor es suficiente.
+
 Teléfono + contraseña, y tú creas cada cuenta a mano. No hay alta por
 cuenta propia: nadie puede registrarse solo con el enlace, ni con
 ningún código — si no le has creado la cuenta, no entra. Es el cambio
@@ -352,6 +362,10 @@ por primera vez.
 
 **Configuración que falta hacer una vez, antes de que esto funcione:**
 
+0. **Activa el proveedor de teléfono** en Supabase si todavía no lo
+   has hecho — ver el aviso al principio de "Cómo funciona el login"
+   más arriba. Sin esto, tanto el login normal como este botón fallan
+   con "Phone logins are disabled".
 1. Ve a Supabase → **Project Settings → API** y copia la **service
    role key** (no la `anon` key — la de "service_role", que pone una
    advertencia al lado).
@@ -375,6 +389,45 @@ donde prefieras (WhatsApp, en persona); no hay recuperación automática
 si la olvida — en ese caso, edítala tú desde Supabase → Authentication
 → Users → esa persona → "..." → cambiar contraseña.
 
+## Responsable de la reserva y equipos manuales
+
+**Quién ha reservado la pista.** Al crear un partido hay un campo
+opcional nuevo, "Pista reservada por", con un desplegable de todos los
+jugadores activos. Es opcional a propósito — si no lo rellenas, el
+partido se crea igual, sin más. Si lo rellenas, en la ficha del
+partido aparece "Pista reservada por: [nombre]" justo debajo del
+contador de jugadores, para que quede claro a quién hay que pagar esa
+semana. Por debajo es una columna nueva en `partidos`
+(`reservador_id`), que apunta a un jugador pero no lo obliga: si esa
+persona se diera de baja algún día, el partido no se rompe, solo
+queda sin reservador asignado.
+
+**Equipos manuales, además de los automáticos.** Al ir a crear los
+equipos de un partido, ahora aparecen dos opciones: 🤖 Generación
+automática (el algoritmo de siempre) o ✋ Equipos manuales. En modo
+manual puedes armar tú los dos equipos jugador a jugador, viendo en
+todo momento la suma de rating de cada lado para juzgar si están
+medianamente equilibrados — útil para semanas en las que quieres forzar
+un reparto concreto (separar a dos amigos que siempre coinciden,
+probar una pareja nueva, lo que sea) en vez de dejarlo al algoritmo.
+
+*Sobre "arrastrar":* lo pediste como "arrastrar jugadores entre Equipo
+A y Equipo B", pero lo he construido como "tocar para mover" en su
+lugar — tocas a un jugador y pasa al otro equipo al instante, sin
+necesidad de arrastrar nada. La razón: el arrastrar-y-soltar nativo
+del navegador no funciona con el dedo en una pantalla táctil sin
+añadir una librería aparte, y esta app está pensada sobre todo para el
+móvil (ahora más, con la PWA instalable). Tocar es más fiable y más
+rápido en el dedo que un arrastre. Si al probarlo prefieres el
+arrastre real, dímelo y lo cambio — sería añadir una librería como
+`@dnd-kit/core`, que sí soporta bien touch.
+
+Una vez guardados, los equipos manuales quedan exactamente igual que
+los generados automáticamente — misma tabla, mismo campo `equipo` en
+cada inscripción. No hay ninguna diferencia para el resto de la app
+(votación, estadísticas, nada) entre un equipo armado a mano o por el
+algoritmo.
+
 ## Permisos: jugador normal frente a administrador
 
 Esto lo he sacado revisando directamente las políticas de la base de
@@ -389,13 +442,15 @@ del resto del grupo; ver sus propios pagos pendientes; y editar su
 nombre, apellidos y posición preferida (esto último, solo la primera
 vez) desde su perfil.
 
-Solo el **administrador** puede: crear, editar y cancelar partidos;
-añadir o quitar a cualquier persona de una convocatoria (no solo a sí
-mismo); generar y confirmar los equipos; registrar el resultado de un
-partido jugado (esto es lo que dispara el cambio de rating de todo el
-mundo); marcar pagos como hechos o pendientes; crear, editar y dar de
-baja jugadores; aplicar el ranking inicial calculado a partir de las
-votaciones; y, desde esta ronda, crear usuarios nuevos completos.
+Solo el **administrador** puede: crear, editar y cancelar partidos
+(incluyendo asignar quién ha reservado la pista); añadir o quitar a
+cualquier persona de una convocatoria (no solo a sí mismo); generar y
+confirmar los equipos, automática o manualmente; registrar el
+resultado de un partido jugado (esto es lo que dispara el cambio de
+rating de todo el mundo); marcar pagos como hechos o pendientes;
+crear, editar y dar de baja jugadores; aplicar el ranking inicial
+calculado a partir de las votaciones; y crear usuarios nuevos
+completos.
 
 **Una precisión honesta, ya que me pides dejarlo bien definido:** casi
 todo lo de arriba está reforzado en el servidor — alguien con
@@ -639,7 +694,20 @@ esquema de antes desplegado en Supabase" (las columnas `telefono` y
 el panel de Admin falla al guardar cualquier cambio en un jugador.
 Tampoco olvides el secreto `SUPABASE_SERVICE_ROLE_KEY` (ver "Crear
 usuarios desde la app") — sin él, todo funciona igual salvo el botón
-de "Crear usuario nuevo".
+de "Crear usuario nuevo". Y para esta ronda en concreto, hace falta
+otra columna nueva (ver el bloque SQL justo debajo) y activar el
+proveedor de teléfono en Supabase si todavía no está activo.
+
+Esta ronda añadió: el campo "Pista reservada por" al crear un
+partido, y la opción de armar equipos manualmente además de la
+generación automática — ambas detalladas en "Responsable de la reserva
+y equipos manuales" más arriba.
+
+Si ya tenías el esquema desplegado, esta columna nueva (para el
+reservador de la pista) hace falta también:
+```sql
+alter table partidos add column reservador_id uuid references jugadores(id) on delete set null;
+```
 
 La app ya se puede instalar como PWA (icono en pantalla de inicio, sin
 notificaciones todavía) — ver "PWA: instalable en el móvil" más

@@ -46,8 +46,15 @@ export interface Partido {
   resultado_goles_b: number | null;
   notas: string | null;
   creado_por: string | null;
+  reservador_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Partido con el nombre del reservador ya resuelto (join), tal y
+ *  como lo devuelve `obtenerPartido`. */
+export interface PartidoConReservador extends Partido {
+  reservador: { id: string; nombre: string; apellidos: string | null } | null;
 }
 
 export interface Inscripcion {

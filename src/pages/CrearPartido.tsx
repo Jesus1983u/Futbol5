@@ -2,10 +2,11 @@
 // CrearPartido — formulario de admin para programar un nuevo partido.
 // =====================================================================
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { crearPartido } from '../lib/partidos';
+import { crearPartido, listarJugadoresActivos } from '../lib/partidos';
+import type { Jugador } from '../types/database';
 import { IconMas } from '../components/icons';
 
 export function CrearPartido() {
@@ -18,8 +19,20 @@ export function CrearPartido() {
   const [precioTotal, setPrecioTotal] = useState('');
   const [jugadoresMax, setJugadoresMax] = useState('10');
   const [notas, setNotas] = useState('');
+  const [reservadorId, setReservadorId] = useState('');
+  const [jugadores, setJugadores] = useState<Jugador[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listarJugadoresActivos()
+      .then((lista) => setJugadores([...lista].sort((a, b) => a.nombre.localeCompare(b.nombre))))
+      .catch(() => {
+        // Si falla, el selector simplemente queda vacío — no bloquea
+        // el resto del formulario, crear el partido sin reservador
+        // asignado sigue siendo válido.
+      });
+  }, []);
 
   async function manejarEnvio(evento: FormEvent) {
     evento.preventDefault();
@@ -35,6 +48,7 @@ export function CrearPartido() {
           precio_total: Number(precioTotal) || 0,
           jugadores_max: Number(jugadoresMax) || 10,
           notas: notas.trim() || null,
+          reservador_id: reservadorId || null,
         },
         jugador.id
       );
@@ -114,6 +128,24 @@ export function CrearPartido() {
             placeholder="Llevar petos, el campo está algo lejos del parking…"
             className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk placeholder:text-muted focus:border-floodlight"
           />
+        </Campo>
+
+        <Campo etiqueta="Pista reservada por (opcional)">
+          <select
+            value={reservadorId}
+            onChange={(e) => setReservadorId(e.target.value)}
+            className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-mid px-3 py-2 font-body text-chalk focus:border-floodlight"
+          >
+            <option value="">Sin especificar</option>
+            {jugadores.map((j) => (
+              <option key={j.id} value={j.id}>
+                {j.nombre} {j.apellidos}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 font-body text-xs text-muted">
+            Para que quede claro a quién hay que pagar la pista.
+          </p>
         </Campo>
 
         {error && <p className="font-body text-sm text-danger">{error}</p>}

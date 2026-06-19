@@ -98,6 +98,11 @@ create table partidos (
   resultado_goles_b int,
   notas text,
   creado_por uuid references jugadores(id),
+  -- Quién ha reservado la pista para este partido concreto (no tiene
+  -- por qué ser el mismo cada semana). "on delete set null" porque si
+  -- esa persona se da de baja algún día, el partido no debe romperse
+  -- — simplemente queda sin reservador asignado.
+  reservador_id uuid references jugadores(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

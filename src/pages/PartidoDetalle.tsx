@@ -14,7 +14,7 @@ import {
   obtenerPartido,
 } from '../lib/partidos';
 import { marcarPago } from '../lib/pagos';
-import type { InscripcionConJugador, Partido } from '../types/database';
+import type { InscripcionConJugador, PartidoConReservador } from '../types/database';
 import { formatearFechaLarga, formatearHora } from '../lib/fecha';
 import { EstadoBadge } from '../components/EstadoBadge';
 import { RosterItem } from '../components/RosterItem';
@@ -26,7 +26,7 @@ export function PartidoDetalle() {
   const { id } = useParams<{ id: string }>();
   const { jugador, esAdmin } = useAuth();
 
-  const [partido, setPartido] = useState<Partido | null>(null);
+  const [partido, setPartido] = useState<PartidoConReservador | null>(null);
   const [inscripciones, setInscripciones] = useState<InscripcionConJugador[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [procesando, setProcesando] = useState(false);
@@ -130,6 +130,15 @@ export function PartidoDetalle() {
         </span>
         {precioPorJugador && <span>≈ {precioPorJugador} € por jugador</span>}
       </div>
+
+      {partido.reservador && (
+        <p className="mt-1 font-body text-sm text-muted">
+          Pista reservada por:{' '}
+          <span className="text-chalk">
+            {partido.reservador.nombre} {partido.reservador.apellidos}
+          </span>
+        </p>
+      )}
 
       {partido.estado === 'jugado' &&
         partido.resultado_goles_a !== null &&

@@ -15,6 +15,7 @@ import type {
   Jugador,
   Partido,
   PartidoConContador,
+  PartidoConReservador,
 } from '../types/database';
 
 export async function listarPartidos(): Promise<PartidoConContador[]> {
@@ -44,10 +45,14 @@ export async function listarPartidos(): Promise<PartidoConContador[]> {
   return (partidos as Partido[]).map((p) => ({ ...p, confirmados: conteos.get(p.id) ?? 0 }));
 }
 
-export async function obtenerPartido(id: string): Promise<Partido | null> {
-  const { data, error } = await supabase.from('partidos').select('*').eq('id', id).maybeSingle();
+export async function obtenerPartido(id: string): Promise<PartidoConReservador | null> {
+  const { data, error } = await supabase
+    .from('partidos')
+    .select('*, reservador:jugadores!partidos_reservador_id_fkey(id, nombre, apellidos)')
+    .eq('id', id)
+    .maybeSingle();
   if (error) throw error;
-  return data as Partido | null;
+  return data as PartidoConReservador | null;
 }
 
 export async function listarInscripciones(partidoId: string): Promise<InscripcionConJugador[]> {
@@ -67,6 +72,7 @@ export interface DatosNuevoPartido {
   precio_total: number;
   jugadores_max: number;
   notas: string | null;
+  reservador_id: string | null;
 }
 
 export async function crearPartido(
