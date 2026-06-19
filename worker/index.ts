@@ -8,13 +8,23 @@
 // Cloudflare (`wrangler secret put SUPABASE_SERVICE_ROLE_KEY`) — nunca
 // en el código, nunca en wrangler.toml, nunca llega al navegador.
 //
+// Las cuentas se crean por EMAIL + contraseña, no por el "phone"
+// nativo de Supabase Auth — Supabase exige configurar un proveedor de
+// SMS real solo para activar ese campo, aunque nunca lleguemos a
+// mandar ningún SMS. En vez de pelear con eso, cada persona se
+// autentica con un email construido a partir de su teléfono (ver
+// `src/lib/telefono.ts`), que ni ve ni necesita conocer: en el login
+// solo escribe su teléfono, igual que antes.
+//
 // Flujo de la petición:
 //   1. Comprobar que quien llama tiene una sesión válida de Supabase
 //      (su token de acceso, tal cual lo usa el navegador).
 //   2. Comprobar que esa persona es administrador (tabla `jugadores`).
 //   3. Validar los datos del formulario.
-//   4. Crear el usuario en Supabase Auth (teléfono + contraseña,
-//      auto-confirmado: no se manda ningún SMS).
+//   4. Crear el usuario en Supabase Auth con el email falso derivado
+//      del teléfono, ya confirmado (email_confirm:true) — la API de
+//      administración nunca manda ningún correo, a diferencia del
+//      registro normal de un usuario.
 //   5. Crear o actualizar su fila en `jugadores` con los datos ya
 //      elegidos por el admin (nombre, posición, rol) en el mismo paso,
 //      en vez de esperar a que esa persona inicie sesión.
@@ -25,6 +35,7 @@
 // =====================================================================
 
 import { createClient } from '@supabase/supabase-js';
+import { normalizarDigitosTelefono, telefonoAEmailFalso } from '../src/lib/telefono';
 
 interface Env {
   ASSETS: Fetcher;
@@ -45,15 +56,6 @@ function jsonResponse(cuerpo: unknown, estado: number): Response {
     status: estado,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-/** Mismo criterio que en el login del frontend: si no empieza por
- *  "+", se asume móvil español y se le pone el prefijo. Se repite
- *  aquí porque el servidor nunca debe fiarse solo de la validación
- *  del cliente. */
-function normalizarTelefono(valor: string): string {
-  const limpio = valor.replace(/[\s-]/g, '');
-  return limpio.startsWith('+') ? limpio : `+34${limpio}`;
 }
 
 async function manejarCrearUsuario(request: Request, env: Env): Promise<Response> {
@@ -103,7 +105,11 @@ async function manejarCrearUsuario(request: Request, env: Env): Promise<Response
   const rol = cuerpo.rol;
 
   if (!nombre) return jsonResponse({ error: 'Falta el nombre.' }, 400);
-  if (!cuerpo.telefono?.trim()) return jsonResponse({ error: 'Falta el teléfono.' }, 400);
+  const telefonoOriginal = (cuerpo.telefono ?? '').trim();
+  if (!telefonoOriginal) return jsonResponse({ error: 'Falta el teléfono.' }, 400);
+  if (normalizarDigitosTelefono(telefonoOriginal).length < 9) {
+    return jsonResponse({ error: 'El teléfono no parece válido.' }, 400);
+  }
   if (password.length < 6) {
     return jsonResponse({ error: 'La contraseña tiene que tener al menos 6 caracteres.' }, 400);
   }
@@ -114,15 +120,17 @@ async function manejarCrearUsuario(request: Request, env: Env): Promise<Response
     return jsonResponse({ error: 'Rol no válido.' }, 400);
   }
 
-  const telefono = normalizarTelefono(cuerpo.telefono.trim());
+  const telefonoNormalizado = normalizarDigitosTelefono(telefonoOriginal);
+  const emailFalso = telefonoAEmailFalso(telefonoOriginal);
 
-  // 4) Crear el usuario en Supabase Auth. phone_confirm:true = no se
-  // manda ningún SMS, queda confirmado directamente (igual que
-  // marcar "Auto Confirm User" a mano en el dashboard).
+  // 4) Crear el usuario en Supabase Auth con el email falso derivado
+  // del teléfono. email_confirm:true lo deja listo para entrar de
+  // inmediato; la API de administración no manda ningún correo en
+  // ningún caso, así que esto no dispara ningún email real.
   const { data: nuevoAuthUser, error: errorCreacion } = await supabase.auth.admin.createUser({
-    phone: telefono,
+    email: emailFalso,
     password,
-    phone_confirm: true,
+    email_confirm: true,
   });
 
   if (errorCreacion || !nuevoAuthUser.user) {
@@ -141,7 +149,7 @@ async function manejarCrearUsuario(request: Request, env: Env): Promise<Response
   const { data: invitadoPrevio } = await supabase
     .from('jugadores')
     .select('id')
-    .eq('telefono', telefono)
+    .eq('telefono', telefonoNormalizado)
     .eq('tipo', 'invitado')
     .is('auth_user_id', null)
     .maybeSingle();
@@ -151,7 +159,8 @@ async function manejarCrearUsuario(request: Request, env: Env): Promise<Response
     tipo: 'registrado',
     rol,
     nombre,
-    telefono,
+    telefono: telefonoNormalizado,
+    email: emailFalso,
     posicion_preferida: posicion,
     posicion_confirmada: true,
   };
@@ -172,7 +181,7 @@ async function manejarCrearUsuario(request: Request, env: Env): Promise<Response
     );
   }
 
-  return jsonResponse({ ok: true, telefono }, 200);
+  return jsonResponse({ ok: true, telefono: telefonoNormalizado }, 200);
 }
 
 export default {

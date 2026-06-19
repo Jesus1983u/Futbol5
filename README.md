@@ -24,6 +24,7 @@ src/lib/pagos.ts                    → acceso a datos de pagos pendientes y mar
 src/lib/admin.ts                    → acceso a datos del panel de administrador
 src/lib/votacion.ts                 → acceso a datos de la votación del ranking inicial
 src/lib/fecha.ts                    → formato de fechas en español
+src/lib/telefono.ts                 → teléfono → email falso, compartido con worker/index.ts
 src/components/icons.tsx            → iconos de trazo simple para títulos y navegación
 src/lib/teamGenerator.ts            → generador de equipos equilibrados (fuerza bruta + heurística)
 src/lib/elo.ts                      → sistema de rating estilo Elo, escala 0-100
@@ -235,55 +236,50 @@ nunca.
 
 ## Cómo funciona el login
 
-**Antes de nada — un interruptor que hay que activar una sola vez:**
-Supabase trae el proveedor de teléfono desactivado por defecto. Si al
-intentar entrar (o al crear un usuario) sale el error "Phone logins
-are disabled", es justo esto. Ve a **Authentication → Sign In /
-Providers** (el nombre exacto cambia algo según la versión del panel)
-y activa **Phone**. No hace falta configurar ningún proveedor de SMS
-de pago (Twilio y similares) — aquí no se manda ningún SMS en ningún
-momento, se entra con contraseña, así que con solo activar el
-interruptor es suficiente.
+Teléfono + contraseña, y tú creas cada cuenta desde la propia app. No
+hay alta por cuenta propia: nadie puede registrarse solo con el
+enlace — si no le has creado la cuenta, no entra.
 
-Teléfono + contraseña, y tú creas cada cuenta a mano. No hay alta por
-cuenta propia: nadie puede registrarse solo con el enlace, ni con
-ningún código — si no le has creado la cuenta, no entra. Es el cambio
-que pediste en la última ronda, en vez del código de invitación que
-había antes (esa función, `fn_codigo_invitacion_valido`, se queda en
-el esquema sin usar, por si la quieres recuperar algún día — no hace
-ningún mal ahí parada).
+**Por qué no usamos el "teléfono" nativo de Supabase.** Lo intentamos
+primero así, pero Supabase exige configurar un proveedor de SMS real
+(Twilio o similar) solo para *activar* el inicio de sesión por
+teléfono — aunque la app nunca llegue a mandar ningún SMS, porque se
+entra con contraseña, no con código. Sin ese proveedor configurado, el
+panel ni siquiera te deja guardar el interruptor, y cualquier intento
+de entrar o crear una cuenta falla con "Phone logins are disabled".
+No es un fallo nuestro: es así como funciona el panel de Supabase.
 
-**Cómo das de alta a alguien:**
+**La solución: cada teléfono se convierte en un email "falso".**
+Cuando creas a alguien con el teléfono `612345678`, por debajo se crea
+una cuenta de verdad con el email `612345678@futbol5.local` — un
+dominio que no existe en internet, solo se usa como identificador
+interno. Esa persona nunca ve ni necesita saber ese email: en la
+pantalla de login solo escribe su teléfono, exactamente como si fuera
+el método nativo. Esta conversión vive en un único archivo,
+`src/lib/telefono.ts`, que usan tanto el Worker (al crear la cuenta)
+como el login (al entrar) — así los dos lados generan siempre el mismo
+email a partir del mismo teléfono.
 
-1. Supabase → **Authentication → Users → "Add user"**.
-2. Rellena **Phone** con el número en formato internacional, por
-   ejemplo `+34612345678` (el prefijo `+34` es obligatorio para que
-   Supabase lo reconozca).
-3. Pon la **contraseña** que le quieras asignar — dísela tú a esa
-   persona, por el medio que prefieras (WhatsApp, en persona...).
-4. Marca **"Auto Confirm User"**. Esto es importante: sin marcarlo,
-   Supabase intentaría mandar un SMS de verificación, y como no hay
-   ningún proveedor de SMS configurado (cuesta dinero y no hace falta
-   para este caso), el alta se quedaría a medias.
-5. Crear. Ya puede entrar con ese teléfono y esa contraseña.
+Como el email no es de verdad, no hace falta ningún proveedor de SMS,
+ni se manda ningún correo de confirmación: las cuentas se crean ya
+confirmadas (`email_confirm: true`), exactamente como pediste.
+
+**Cómo das de alta a alguien:** Admin → Jugadores → "Crear usuario
+nuevo" — nombre, teléfono, contraseña, posición y rol. Al pulsar
+"Crear" queda todo hecho de una vez. Ver "Crear usuarios desde la app"
+más abajo para la configuración previa que hace falta (el secreto de
+la "service role key").
 
 Si quieres que el nombre le aparezca bien desde el primer momento (en
 vez de un nombre provisional que tenga que cambiar él mismo luego),
 puedes crearlo antes como invitado desde dentro de un partido (botón
-"+ Añadir jugador" → "Teléfono") con el mismo número — en cuanto esa
-persona inicie sesión, la app lo reconoce por el teléfono y lo vincula
-solo, conservando cualquier historial que ya tuviera como invitado.
-
-**Por debajo:** la pantalla llama a `supabase.auth.signInWithPassword
-({ phone, password })`. Si escribes el número sin el `+34` delante, la
-propia pantalla de login se lo añade automáticamente — así cualquiera
-puede escribir su móvil tal cual lo diría en voz alta, sin pensar en
-prefijos internacionales.
+"+ Añadir jugador" → "Teléfono") con el mismo número — al crearle
+después la cuenta de acceso con ese mismo teléfono, se vincula solo,
+conservando cualquier historial que ya tuviera como invitado.
 
 Justo después de entrar, la app llama a la función SQL
 `fn_completar_registro()` (en `schema.sql`), que decide qué fila de
-`jugadores` corresponde a esa persona — por teléfono si entró por
-teléfono, por email si entró por el camino de respaldo de abajo:
+`jugadores` corresponde a esa persona:
 
 1. Si ya tenía una cuenta vinculada, la recupera tal cual.
 2. Si ya le habías dado de alta como invitado con ese mismo teléfono
@@ -293,13 +289,11 @@ teléfono, por email si entró por el camino de respaldo de abajo:
    con un nombre provisional que la persona puede cambiar en su
    perfil.
 
-**Vía de respaldo por email, para tu propia continuidad.** Como tu
-cuenta de pruebas de las primeras fases se creó por email, dejé un
-enlace pequeño en el login, "Entrar con email", que sigue funcionando
-con `email + contraseña` exactamente igual que antes. No es el camino
-pensado para el grupo — ellos solo tienen teléfono — pero así no te
-quedas tú mismo sin entrar el día que cambies de móvil o se borre el
-almacenamiento del navegador.
+**Vía de respaldo por email real, solo para ti.** Tu propia cuenta de
+pruebas se creó con tu email real durante el desarrollo, así que sigue
+funcionando con el enlace "Entrar con email" en el login. No es el
+camino para el grupo — ellos solo tienen teléfono — es solo para que
+no te quedes tú sin entrar si alguna vez hace falta.
 
 ### Si ya tenías el esquema de antes desplegado en Supabase
 
@@ -336,6 +330,12 @@ activo/inactivo funcionaba. Ahora además, si vuelve a fallar, el
 mensaje rojo te dirá el motivo exacto en vez de un genérico "no se
 pudo guardar" — así si es otra cosa, lo vemos enseguida.
 
+**Si ya intentaste crear usuarios antes de este cambio y te dio
+"Phone logins are disabled":** esos intentos no llegaron a crear
+ninguna cuenta de verdad (Supabase los rechazó antes de guardar nada),
+así que no hay nada que limpiar — simplemente vuelve a intentarlo
+ahora con el mismo teléfono y contraseña y debería funcionar.
+
 ## Crear usuarios desde la app
 
 Ya no hace falta entrar al panel de Supabase para dar de alta a
@@ -354,18 +354,15 @@ además de servir la app, también ejecuta un trozo de código de
 servidor propio (`worker/index.ts`) para la ruta `/api/crear-usuario`.
 Esa es la única pieza que conoce esa clave. El flujo: comprueba que
 quien llama tiene una sesión válida, comprueba que esa persona es
-administrador en la tabla `jugadores`, valida los datos, crea la
-cuenta en Supabase Auth (con el teléfono ya confirmado, sin mandar
-ningún SMS) y por último crea o actualiza su fila de jugador con los
+administrador en la tabla `jugadores`, valida los datos, convierte el
+teléfono al email falso (ver "Cómo funciona el login" más arriba),
+crea la cuenta en Supabase Auth ya confirmada, sin mandar ningún
+email ni SMS, y por último crea o actualiza su fila de jugador con los
 datos que ya elegiste — sin esperar a que esa persona inicie sesión
 por primera vez.
 
 **Configuración que falta hacer una vez, antes de que esto funcione:**
 
-0. **Activa el proveedor de teléfono** en Supabase si todavía no lo
-   has hecho — ver el aviso al principio de "Cómo funciona el login"
-   más arriba. Sin esto, tanto el login normal como este botón fallan
-   con "Phone logins are disabled".
 1. Ve a Supabase → **Project Settings → API** y copia la **service
    role key** (no la `anon` key — la de "service_role", que pone una
    advertencia al lado).
@@ -494,16 +491,23 @@ sobre Workers en vez de Pages — `wrangler.toml` ya está listo para
 eso. Si prefieres Pages igualmente, el frontend funciona igual — solo
 cambia dónde vive el cron del recordatorio.
 
-**Login por teléfono + contraseña, creado por el admin (cambiado en
-esta ronda).** El encargo no especificaba el mecanismo exacto de
-login, solo que hubiera roles admin/jugador. Empecé con código de un
-solo uso por email, sin contraseñas, porque es lo que ya usas en la
-intranet de facturación y evita gestionar altas y recuperación de
-contraseña — pero pediste más control sobre quién entra, así que pasé
-a que tú crees cada cuenta a mano (teléfono + contraseña que tú
-asignas, sin alta por cuenta propia). Sigue sin haber recuperación de
-contraseña automática: si alguien la olvida, tienes que cambiársela tú
-desde el panel de Supabase, igual que al crearla.
+**Login por teléfono + contraseña, creado por el admin (cambiado dos
+veces).** El encargo no especificaba el mecanismo exacto de login,
+solo que hubiera roles admin/jugador. Empecé con código de un solo uso
+por email, sin contraseñas, porque es lo que ya usas en la intranet de
+facturación y evita gestionar altas y recuperación de contraseña —
+pero pediste más control sobre quién entra, así que pasé a que tú
+crees cada cuenta a mano. El primer intento usó el "teléfono" nativo
+de Supabase Auth, pero topó con una exigencia real de la plataforma:
+Supabase no deja activar ese inicio de sesión sin configurar un
+proveedor de SMS, aunque nuestra app nunca mande ningún SMS (se entra
+con contraseña). En vez de depender de un Twilio que no hace falta
+para nada, cada teléfono se traduce a un email "falso" determinista
+(`612345678@futbol5.local`) y se usa el email+contraseña que ya
+funcionaba — la persona solo ve y escribe su teléfono, el cambio es
+invisible. Sigue sin haber recuperación de contraseña automática: si
+alguien la olvida, tienes que cambiársela tú desde el panel de
+Supabase.
 
 **Una sola tabla `jugadores` para registrados e invitados.** El
 encargo separaba "Usuarios" e "Invitados" en dos tablas. Lo unifico en
@@ -695,8 +699,15 @@ el panel de Admin falla al guardar cualquier cambio en un jugador.
 Tampoco olvides el secreto `SUPABASE_SERVICE_ROLE_KEY` (ver "Crear
 usuarios desde la app") — sin él, todo funciona igual salvo el botón
 de "Crear usuario nuevo". Y para esta ronda en concreto, hace falta
-otra columna nueva (ver el bloque SQL justo debajo) y activar el
-proveedor de teléfono en Supabase si todavía no está activo.
+otra columna nueva (ver el bloque SQL justo debajo).
+
+**Cambio importante en esta ronda:** el login ya no usa el "teléfono"
+nativo de Supabase (chocaba con la exigencia de un proveedor de SMS
+real) — ahora usa email+contraseña con un email construido a partir
+del teléfono, invisible para la persona. Si habías intentado crear
+usuarios antes de este cambio y te dio "Phone logins are disabled",
+no hay nada que limpiar: esos intentos nunca llegaron a crear ninguna
+cuenta. Ver "Cómo funciona el login" para el detalle completo.
 
 Esta ronda añadió: el campo "Pista reservada por" al crear un
 partido, y la opción de armar equipos manualmente además de la

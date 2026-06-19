@@ -1,7 +1,12 @@
 // =====================================================================
 // Login — teléfono + contraseña. No hay alta por cuenta propia: el
-// administrador crea cada cuenta de antemano en Supabase, así que esta
-// pantalla solo inicia sesión, nunca registra a nadie nuevo.
+// administrador crea cada cuenta desde la propia app (Admin →
+// Jugadores → "Crear usuario nuevo"), así que esta pantalla solo
+// inicia sesión, nunca registra a nadie nuevo.
+//
+// Por debajo, AuthContext convierte el teléfono escrito aquí al mismo
+// email falso que se generó al crear la cuenta — la persona nunca lo
+// ve ni necesita saberlo (ver src/lib/telefono.ts).
 // =====================================================================
 
 import { useState, type FormEvent } from 'react';
@@ -9,15 +14,6 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 type Paso = 'telefono' | 'email';
-
-/** Si no empieza por "+", asumimos un móvil español de 9 cifras y le
- *  ponemos el prefijo — así cualquiera puede escribir su número tal
- *  cual lo diría en voz alta, sin pensar en formatos internacionales. */
-function normalizarTelefono(valor: string): string {
-  const limpio = valor.replace(/[\s-]/g, '');
-  if (limpio.startsWith('+')) return limpio;
-  return `+34${limpio}`;
-}
 
 export function Login() {
   const { estado, iniciarSesionTelefono, entrarConContrasena } = useAuth();
@@ -40,7 +36,7 @@ export function Login() {
     evento.preventDefault();
     setError(null);
     setEnviando(true);
-    const { error } = await iniciarSesionTelefono(normalizarTelefono(telefono), password);
+    const { error } = await iniciarSesionTelefono(telefono.trim(), password);
     setEnviando(false);
     if (error) setError(error);
   }

@@ -137,8 +137,8 @@ export function AnadirJugadorAdmin({ partidoId, yaInscritos, onAnadido }: Anadir
       <p className="font-body text-xs text-muted">
         El número junto al nombre es su nivel estimado (0-100, 50 = medio) — así el generador de
         equipos lo tiene en cuenta desde el primer partido. Si le pones el teléfono y luego le
-        creas la cuenta con ese mismo número (Supabase → Authentication → Users), se vincula solo
-        en cuanto entre y pasa a "jugador habitual" sin perder nada de este historial.
+        creas la cuenta con ese mismo número (Admin → Jugadores → "Crear usuario nuevo"), se
+        vincula solo y pasa a "jugador habitual" sin perder nada de este historial.
       </p>
 
       {error && <p className="font-body text-sm text-danger">{error}</p>}

@@ -2,17 +2,22 @@
 // AuthContext — sesión de Supabase Auth + el registro `jugadores`
 // vinculado a esa sesión.
 // =====================================================================
-// El login es por teléfono + contraseña: tú (el admin) creas cada
-// cuenta a mano en Supabase → Authentication → Users → "Add user",
-// con el teléfono de la persona y una contraseña que tú le asignas
-// ("Auto Confirm User" marcado, así no se manda ningún SMS). No hay
-// alta por cuenta propia — nadie entra si no le has creado la cuenta
-// tú antes.
+// El login es por teléfono + contraseña, pero por debajo se traduce a
+// email + contraseña (ver `src/lib/telefono.ts`): Supabase exige
+// configurar un proveedor de SMS real solo para activar el campo
+// "phone" nativo, aunque nunca lleguemos a mandar ningún SMS — así que
+// en vez de pelear con eso, cada teléfono se convierte en un email
+// falso determinista (p.ej. "612345678" → "612345678@futbol5.local").
+// La persona nunca ve ni necesita conocer ese email: solo escribe su
+// teléfono, igual que si fuera el método "de verdad".
 //
-// Se mantiene además `entrarConContrasena` (email + contraseña) como
-// vía de respaldo, sobre todo para que tu propia cuenta de pruebas
-// (creada por email durante el desarrollo) no se quede colgada el día
-// que cambies de móvil o borres el almacenamiento del navegador.
+// Tú (el admin) creas cada cuenta desde Admin → Jugadores → "Crear
+// usuario nuevo" en la propia app — no hay alta por cuenta propia,
+// nadie entra si no le has creado la cuenta tú antes.
+//
+// Se mantiene además `entrarConContrasena` (email real + contraseña)
+// como vía de respaldo para tu propia cuenta de pruebas, creada con
+// tu email real durante el desarrollo.
 //
 // Justo después de iniciar sesión, llamamos a `fn_completar_registro`
 // (ver schema.sql) para obtener la fila de `jugadores` — vinculando un
@@ -31,6 +36,7 @@ import {
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { telefonoAEmailFalso } from '../lib/telefono';
 import type { Jugador } from '../types/database';
 
 type EstadoAuth = 'cargando' | 'sin_sesion' | 'autenticado';
@@ -101,16 +107,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [cargarJugador]);
 
-  // Vía principal para el grupo: el admin crea la cuenta de antemano
-  // con este mismo teléfono, así que aquí solo hace falta iniciar
-  // sesión, nunca registrarse.
+  // Vía principal para el grupo: convierte el teléfono al mismo email
+  // falso que se usó al crear la cuenta (worker/index.ts), y entra
+  // con eso. La persona nunca ve este email — solo escribe su
+  // teléfono, como si fuera el método nativo.
   const iniciarSesionTelefono = useCallback(async (telefono: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ phone: telefono, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: telefonoAEmailFalso(telefono),
+      password,
+    });
     return { error: error ? mensajeCredencialesInvalidas(error.message) : null };
   }, []);
 
-  // Vía de respaldo por email, para no dejar sin acceso a quien tenga
-  // una cuenta de pruebas creada antes de pasar a teléfono+contraseña.
+  // Vía de respaldo por email real, solo para tu propia cuenta de
+  // pruebas creada con tu email durante el desarrollo.
   const entrarConContrasena = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return { error: error ? mensajeCredencialesInvalidas(error.message) : null };
