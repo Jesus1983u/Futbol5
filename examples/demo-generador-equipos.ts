@@ -6,36 +6,39 @@
 // (una vez tengas el proyecto con sus dependencias instaladas)
 // =====================================================================
 
-import { generarEquipos, construirMapaHistorial } from '../src/lib/teamGenerator';
+import { generarEquipos, construirMapaSinergia } from '../src/lib/teamGenerator';
 import { calcularCambioElo } from '../src/lib/elo';
 import type { JugadorParaGenerador } from '../src/types/database';
 
 const jugadores: JugadorParaGenerador[] = [
-  { id: '1', nombre: 'Jesús', rating: 85, posicion: 'atacante' },
-  { id: '2', nombre: 'Juan', rating: 80, posicion: 'defensor' },
-  { id: '3', nombre: 'Rafa', rating: 78, posicion: 'atacante' },
-  { id: '4', nombre: 'Pepe', rating: 75, posicion: 'defensor' },
-  { id: '5', nombre: 'Luis', rating: 70, posicion: 'atacante' },
-  { id: '6', nombre: 'Manolo', rating: 68, posicion: 'defensor' },
-  { id: '7', nombre: 'Antonio', rating: 60, posicion: 'atacante' },
-  { id: '8', nombre: 'Curro', rating: 55, posicion: 'defensor' },
-  { id: '9', nombre: 'Sergio', rating: 50, posicion: 'atacante' },
-  { id: '10', nombre: 'Pablo', rating: 40, posicion: 'atacante' },
+  { id: '1', nombre: 'Jesús', rating: 85, posicion: 'atacante', impactoVictoria: 0.3 },
+  { id: '2', nombre: 'Juan', rating: 80, posicion: 'defensor', impactoVictoria: 0.1 },
+  { id: '3', nombre: 'Rafa', rating: 78, posicion: 'atacante', impactoVictoria: -0.1 },
+  { id: '4', nombre: 'Pepe', rating: 75, posicion: 'defensor', impactoVictoria: 0 },
+  { id: '5', nombre: 'Luis', rating: 70, posicion: 'mixto', impactoVictoria: 0.05 },
+  { id: '6', nombre: 'Manolo', rating: 68, posicion: 'defensor', impactoVictoria: 0 },
+  { id: '7', nombre: 'Antonio', rating: 60, posicion: 'atacante', impactoVictoria: -0.2 },
+  { id: '8', nombre: 'Curro', rating: 55, posicion: 'defensor', impactoVictoria: 0 },
+  { id: '9', nombre: 'Sergio', rating: 50, posicion: 'atacante', impactoVictoria: 0.15 },
+  { id: '10', nombre: 'Pablo', rating: 40, posicion: 'atacante', impactoVictoria: 0 },
 ];
 
-// Jesús y Juan han jugado juntos 25 veces -> el algoritmo debería evitar
-// repetir la pareja si hay alternativas igual de equilibradas en rating.
-const historial = construirMapaHistorial([
-  { jugadorA: '1', jugadorB: '2', veces: 25 },
-  { jugadorA: '1', jugadorB: '7', veces: 3 },
+// Jesús y Juan han jugado juntos 25 veces y han ganado 20 de ellas ->
+// sinergia muy positiva, el algoritmo debería premiar ligeramente que
+// sigan en el mismo equipo si el resto de factores lo permite.
+// Jesús y Antonio han jugado pocas veces (3) -> por debajo del umbral
+// MIN_PARTIDOS_PARA_SINERGIA, se trata como neutro pase lo que pase.
+const sinergia = construirMapaSinergia([
+  { jugadorA: '1', jugadorB: '2', partidos: 25, victorias: 20, derrotas: 3, empates: 2 },
+  { jugadorA: '1', jugadorB: '7', partidos: 3, victorias: 0, derrotas: 3, empates: 0 },
 ]);
 
-const resultado = generarEquipos(jugadores, historial);
+const resultado = generarEquipos(jugadores, sinergia);
 
-console.log(`Equipo A (${resultado.equipoA.ratingTotal} pts, ${resultado.equipoA.atacantes} atk / ${resultado.equipoA.defensores} def):`);
+console.log(`Equipo A (${resultado.equipoA.ratingTotal} pts, impacto ${resultado.equipoA.impactoTotal}, ${resultado.equipoA.atacantes} atk / ${resultado.equipoA.defensores} def / ${resultado.equipoA.mixtos} mixto):`);
 resultado.equipoA.jugadores.forEach((j) => console.log(`  - ${j.nombre} (${j.rating})`));
 
-console.log(`\nEquipo B (${resultado.equipoB.ratingTotal} pts, ${resultado.equipoB.atacantes} atk / ${resultado.equipoB.defensores} def):`);
+console.log(`\nEquipo B (${resultado.equipoB.ratingTotal} pts, impacto ${resultado.equipoB.impactoTotal}, ${resultado.equipoB.atacantes} atk / ${resultado.equipoB.defensores} def / ${resultado.equipoB.mixtos} mixto):`);
 resultado.equipoB.jugadores.forEach((j) => console.log(`  - ${j.nombre} (${j.rating})`));
 
 console.log(`\nDiferencia de rating: ${resultado.diferenciaRating} (de ${resultado.combinacionesEvaluadas} combinaciones evaluadas, método ${resultado.metodo})`);

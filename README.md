@@ -425,6 +425,114 @@ cada inscripción. No hay ninguna diferencia para el resto de la app
 (votación, estadísticas, nada) entre un equipo armado a mano o por el
 algoritmo.
 
+## Generador de equipos mejorado: impacto, sinergias y posición mixta
+
+Esta ronda mejora el generador de equipos sin tocar lo que ya
+funcionaba: el rating (Elo) sigue siendo, con diferencia, la señal
+que más pesa. Lo nuevo se suma como ajuste fino, nunca lo sustituye.
+
+**Nuevo reparto de pesos:**
+- 70% — equilibrio de rating entre equipos (igual que siempre)
+- 10% — equilibrio de "impacto en victoria" entre equipos (nuevo)
+- 10% — sinergias de pareja (nuevo — sustituye al antiguo 15% que solo
+  miraba "veces jugado juntos" sin distinguir si esas veces fueron
+  buenas o malas)
+- 10% — equilibrio de posiciones, ahora con soporte para "mixto"
+
+Sigue evaluando **todas las combinaciones posibles** cuando el número
+de jugadores lo permite (hasta 24), exactamente igual que antes.
+
+**Impacto en victoria.** Cada jugador tiene ahora una métrica
+`impacto_victoria`, de -1 a +1, que crece cuando sus equipos rinden
+mejor de lo que el Elo previo predecía y baja cuando rinden peor. No
+usa goles ni asistencias — se calcula en `fn_finalizar_partido`
+comparando el resultado real con la expectativa del Elo de cada
+equipo antes del partido (la misma "sorpresa" que ya movía el Elo,
+reutilizada aquí). Para que sea estable y sin saltos, se actualiza con
+una media móvil exponencial (cada partido nuevo solo mueve la métrica
+un poco, nunca de golpe) — un jugador necesita varios partidos
+seguidos por encima o por debajo de lo esperado para que el número se
+mueva de forma notable. Arranca en 0 (neutro) para cualquier jugador
+nuevo.
+
+**Sinergias de pareja.** `historial_companeros` ahora guarda, además
+de "veces jugado juntos", cuántas de esas veces ganaron, perdieron o
+empataron juntos. Con eso se calcula una sinergia por pareja:
+`(victorias - derrotas) / partidos`, en el rango -1..+1 — los ejemplos
+del encargo dan exactamente lo esperado (Juan+Carlos, 20 partidos/15
+victorias → sinergia +0.50; Juan+Pedro, 15 partidos/4 victorias →
+sinergia -0.47, lo he comprobado a mano). Por debajo de 3 partidos
+juntos, la sinergia se trata como neutra (0) en vez de usar el valor
+calculado — con 1 o 2 partidos, el resultado es más suerte que
+patrón, y esto evita que una racha puntual mueva la generación de
+equipos de forma desproporcionada. Durante la generación, las parejas
+con sinergia muy negativa suman coste (se evita juntarlas) y las de
+sinergia muy positiva lo restan (se favorece mantenerlas), siempre con
+el peso del 10% — nunca por encima del equilibrio de rating.
+
+**Posición mixta.** Además de atacante/defensor, ahora existe
+"mixto": alguien que puede jugar en cualquiera de las dos posiciones.
+Durante la generación, cada jugador mixto de cada equipo se asigna
+(solo para el cálculo del coste de posiciones, no es una etiqueta
+final ni se guarda en ningún sitio) como atacante o defensor, lo que
+más ayude a equilibrar ese reparto concreto frente al otro equipo —
+se prueban todas las combinaciones posibles de asignación (el número
+de mixtos por equipo es siempre pequeño, así que esto no añade
+ningún coste de rendimiento perceptible). Se puede elegir desde Mi
+perfil (con una nota explicando qué significa) y desde el panel de
+Admin al editar o crear un jugador.
+
+**Estadísticas nuevas en el perfil.** La pantalla de "Mi perfil" ahora
+muestra, además de lo que ya había: la posición preferida explícita,
+el impacto en victoria (con signo, p.ej. "+0.42"), y el mejor y peor
+compañero histórico — calculados con la misma sinergia de arriba, no
+con la frecuencia, así que "mejor compañero" significa "con quien más
+ganas de lo esperado", no "con quien más coincides". Si todavía no
+hay ninguna pareja con al menos 3 partidos juntos, se muestra un aviso
+en vez de un dato poco fiable.
+
+### Migración SQL para esta ronda, si ya tenías el esquema desplegado
+
+Como siempre que el proyecto ya está en marcha con datos reales, no se
+puede repegar `schema.sql` entero. Para esta ronda hacen falta estos
+pasos en el SQL Editor, en este orden:
+
+1. Añadir 'mixto' al enum de posiciones (esto no se puede meter dentro
+   de una transacción con otras sentencias, va suelto y solo):
+   ```sql
+   alter type posicion_jugador add value 'mixto';
+   ```
+2. Las columnas nuevas:
+   ```sql
+   alter table jugadores add column impacto_victoria numeric(4,3) not null default 0;
+   alter table historial_companeros add column victorias_juntos int not null default 0;
+   alter table historial_companeros add column derrotas_juntos int not null default 0;
+   alter table historial_companeros add column empates_juntos int not null default 0;
+   ```
+3. Vuelve a crear estas dos vistas — ninguna de las dos usa `create or
+   replace`, así que primero hay que borrarlas y luego pegar la
+   definición nueva tal cual está en `schema.sql`:
+   ```sql
+   drop view if exists vista_estadisticas_jugadores;
+   drop view if exists vista_historial_jugador;
+   ```
+   y a continuación pega las definiciones completas de
+   `vista_estadisticas_jugadores` (ahora incluye `impacto_victoria`) y
+   `vista_historial_jugador` (ahora incluye los tres contadores
+   nuevos) desde `schema.sql`.
+4. Por último, vuelve a pegar la función `fn_finalizar_partido()`
+   completa desde `schema.sql` — esta sí es `create or replace`,
+   segura de repetir sobre una base ya en marcha. Es la pieza más
+   importante: sin ella, los partidos seguirían registrándose bien
+   (Elo, victorias/derrotas/empates) pero nunca se calcularía ni el
+   impacto en victoria ni el desglose de sinergia del historial.
+
+Los datos ya existentes no se pierden con nada de esto: las columnas
+nuevas arrancan en sus valores neutros (0) para todo el mundo, y se
+van llenando de verdad a partir del próximo partido que registres con
+"Registrar resultado" — los partidos ya jugados antes de este cambio
+no se recalculan retroactivamente.
+
 ## Permisos: jugador normal frente a administrador
 
 Esto lo he sacado revisando directamente las políticas de la base de
@@ -698,8 +806,15 @@ esquema de antes desplegado en Supabase" (las columnas `telefono` y
 el panel de Admin falla al guardar cualquier cambio en un jugador.
 Tampoco olvides el secreto `SUPABASE_SERVICE_ROLE_KEY` (ver "Crear
 usuarios desde la app") — sin él, todo funciona igual salvo el botón
-de "Crear usuario nuevo". Y para esta ronda en concreto, hace falta
-otra columna nueva (ver el bloque SQL justo debajo).
+de "Crear usuario nuevo". Y para la ronda del reservador de pista,
+hace falta otra columna nueva (ver el bloque SQL más abajo).
+
+**Para la ronda más reciente (generador de equipos mejorado):** no
+olvides la migración de "Generador de equipos mejorado" más arriba
+(enum `mixto`, columnas `impacto_victoria` y las tres de
+`historial_companeros`, vistas y `fn_finalizar_partido` actualizadas)
+— sin ella, el botón de "Registrar resultado" seguirá funcionando
+pero nunca calculará el impacto en victoria ni la sinergia.
 
 **Cambio importante en esta ronda:** el login ya no usa el "teléfono"
 nativo de Supabase (chocaba con la exigencia de un proveedor de SMS

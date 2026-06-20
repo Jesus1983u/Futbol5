@@ -25,7 +25,10 @@ create extension if not exists pgcrypto;
 -- ---------------------------------------------------------------------
 create type tipo_jugador as enum ('registrado', 'invitado');
 create type rol_usuario as enum ('admin', 'jugador');
-create type posicion_jugador as enum ('atacante', 'defensor');
+-- 'mixto' añadido en la ronda de mejora del generador de equipos: un
+-- jugador mixto puede contar como atacante o como defensor según
+-- convenga para equilibrar las posiciones de cada partido concreto.
+create type posicion_jugador as enum ('atacante', 'defensor', 'mixto');
 create type estado_partido as enum ('abierto', 'cerrado', 'cancelado', 'jugado');
 create type disponibilidad_estado as enum ('pendiente', 'voy', 'no_voy');
 create type inscripcion_estado as enum ('confirmado', 'lista_espera', 'cancelado');
@@ -49,6 +52,13 @@ create table jugadores (
 
   rating_actual numeric(5,2) not null default 50,
   rating_inicial_confirmado boolean not null default false,
+
+  -- Impacto en victoria: media móvil exponencial (EMA) de cuánto mejor
+  -- o peor rinde este jugador frente a lo que el Elo previo de su
+  -- equipo predecía para cada partido. Rango -1..1, 0 = neutro. No
+  -- sustituye al Elo — es una señal secundaria y suave para el
+  -- generador de equipos. Ver fn_finalizar_partido para el cálculo.
+  impacto_victoria numeric(4,3) not null default 0,
 
   partidos_jugados int not null default 0,
   victorias int not null default 0,
@@ -162,6 +172,13 @@ create table historial_companeros (
   jugador_menor_id uuid not null references jugadores(id) on delete cascade,
   jugador_mayor_id uuid not null references jugadores(id) on delete cascade,
   veces_jugado_juntos int not null default 0,
+  -- Desglose del resultado de esos partidos jugados en el mismo
+  -- equipo, para poder calcular una "sinergia" de la pareja además de
+  -- la simple frecuencia (ver fn_finalizar_partido y
+  -- src/lib/teamGenerator.ts::calcularSinergia).
+  victorias_juntos int not null default 0,
+  derrotas_juntos int not null default 0,
+  empates_juntos int not null default 0,
   ultimo_partido_id uuid references partidos(id),
   updated_at timestamptz not null default now(),
   primary key (jugador_menor_id, jugador_mayor_id),
@@ -172,11 +189,13 @@ create table historial_companeros (
 -- (la tabla solo guarda un sentido del par; esta vista expande ambos)
 create view vista_historial_jugador as
   select jugador_menor_id as jugador_id, jugador_mayor_id as companero_id,
-         veces_jugado_juntos, ultimo_partido_id
+         veces_jugado_juntos, victorias_juntos, derrotas_juntos, empates_juntos,
+         ultimo_partido_id
   from historial_companeros
   union all
   select jugador_mayor_id as jugador_id, jugador_menor_id as companero_id,
-         veces_jugado_juntos, ultimo_partido_id
+         veces_jugado_juntos, victorias_juntos, derrotas_juntos, empates_juntos,
+         ultimo_partido_id
   from historial_companeros;
 
 -- ---------------------------------------------------------------------
@@ -186,6 +205,7 @@ create view vista_historial_jugador as
 create view vista_estadisticas_jugadores as
   select
     id, nombre, apellidos, tipo, rol, posicion_preferida, rating_actual,
+    impacto_victoria,
     partidos_jugados, victorias, derrotas, empates,
     case when partidos_jugados > 0
          then round((victorias::numeric / partidos_jugados) * 100, 1)
@@ -509,6 +529,12 @@ declare
   k_base numeric := 4;
   denominador numeric := 50;
   multiplicador_max numeric := 2;
+  -- Suavizado del impacto en victoria: media móvil exponencial. Un
+  -- alpha bajo (0.15) hace que cada partido individual mueva poco la
+  -- métrica — varios partidos seguidos por encima o por debajo de lo
+  -- esperado son los que la mueven de verdad. Así se cumple el pedido
+  -- de "sin cambios bruscos".
+  alpha_impacto numeric := 0.15;
 
   v_estado_actual estado_partido;
   v_rating_a numeric; v_rating_b numeric;
@@ -516,7 +542,16 @@ declare
   v_resultado_a numeric; -- 1 victoria, 0.5 empate, 0 derrota
   v_multiplicador numeric;
   v_cambio_a numeric; v_cambio_b numeric;
+  -- "Sorpresa" del resultado frente a lo que el Elo previo predecía,
+  -- ya en escala -1..1 (resultado y expectativa son ambos 0..1). Es
+  -- la señal cruda que alimenta el impacto en victoria de cada
+  -- jugador del equipo A; el de B es exactamente el opuesto.
+  v_senal_a numeric;
   v_jugador record;
+  -- Qué contador de historial_companeros toca incrementar para las
+  -- parejas de cada equipo, según el resultado real de este partido.
+  v_incr_victoria_a int; v_incr_derrota_a int; v_incr_empate_a int;
+  v_incr_victoria_b int; v_incr_derrota_b int; v_incr_empate_b int;
 begin
   if not fn_is_admin(auth.uid()) then
     raise exception 'NO_AUTORIZADO: Solo el administrador puede registrar resultados.';
@@ -555,6 +590,21 @@ begin
   v_cambio_a := k_base * v_multiplicador * (v_resultado_a - v_expectativa_a);
   v_cambio_b := -v_cambio_a;
 
+  -- Misma "sorpresa" que mueve el Elo (resultado real menos lo
+  -- esperado), pero sin el multiplicador de goleada ni el k_base —
+  -- el impacto en victoria mide si el jugador rinde mejor o peor de
+  -- lo esperado, no cuánto se goleó.
+  v_senal_a := v_resultado_a - v_expectativa_a;
+
+  v_incr_victoria_a := case when v_resultado_a = 1 then 1 else 0 end;
+  v_incr_derrota_a  := case when v_resultado_a = 0 then 1 else 0 end;
+  v_incr_empate_a   := case when v_resultado_a = 0.5 then 1 else 0 end;
+  -- El resultado de B es el inverso del de A (un empate sigue siendo
+  -- empate para los dos).
+  v_incr_victoria_b := v_incr_derrota_a;
+  v_incr_derrota_b  := v_incr_victoria_a;
+  v_incr_empate_b   := v_incr_empate_a;
+
   update partidos
     set estado = 'jugado', resultado_goles_a = p_goles_a, resultado_goles_b = p_goles_b
     where id = p_partido_id;
@@ -566,6 +616,7 @@ begin
   loop
     update jugadores set
       rating_actual = greatest(0, least(100, rating_actual + v_cambio_a)),
+      impacto_victoria = greatest(-1, least(1, impacto_victoria * (1 - alpha_impacto) + v_senal_a * alpha_impacto)),
       partidos_jugados = partidos_jugados + 1,
       victorias = victorias + (case when v_resultado_a = 1 then 1 else 0 end),
       derrotas = derrotas + (case when v_resultado_a = 0 then 1 else 0 end),
@@ -573,13 +624,14 @@ begin
     where id = v_jugador.id;
   end loop;
 
-  -- Equipo B (resultado inverso al de A)
+  -- Equipo B (resultado y señal inversos a los de A)
   for v_jugador in
     select j.id, j.rating_actual from inscripciones i join jugadores j on j.id = i.jugador_id
     where i.partido_id = p_partido_id and i.equipo = 'B' and i.estado_inscripcion = 'confirmado'
   loop
     update jugadores set
       rating_actual = greatest(0, least(100, rating_actual + v_cambio_b)),
+      impacto_victoria = greatest(-1, least(1, impacto_victoria * (1 - alpha_impacto) + (-v_senal_a) * alpha_impacto)),
       partidos_jugados = partidos_jugados + 1,
       victorias = victorias + (case when v_resultado_a = 0 then 1 else 0 end),
       derrotas = derrotas + (case when v_resultado_a = 1 then 1 else 0 end),
@@ -587,14 +639,42 @@ begin
     where id = v_jugador.id;
   end loop;
 
-  -- Historial de compañeros: todas las parejas dentro del mismo equipo
-  insert into historial_companeros (jugador_menor_id, jugador_mayor_id, veces_jugado_juntos, ultimo_partido_id)
-  select least(a.jugador_id, b.jugador_id), greatest(a.jugador_id, b.jugador_id), 1, p_partido_id
+  -- Historial de compañeros, equipo A: incrementa el contador del
+  -- resultado real de ESTE equipo (victoria/derrota/empate juntos),
+  -- no solo el contador genérico de "veces juntos" de antes.
+  insert into historial_companeros (
+    jugador_menor_id, jugador_mayor_id, veces_jugado_juntos,
+    victorias_juntos, derrotas_juntos, empates_juntos, ultimo_partido_id
+  )
+  select least(a.jugador_id, b.jugador_id), greatest(a.jugador_id, b.jugador_id),
+         1, v_incr_victoria_a, v_incr_derrota_a, v_incr_empate_a, p_partido_id
   from inscripciones a join inscripciones b
-    on a.partido_id = b.partido_id and a.equipo = b.equipo and a.jugador_id < b.jugador_id
+    on a.partido_id = b.partido_id and a.equipo = 'A' and b.equipo = 'A' and a.jugador_id < b.jugador_id
   where a.partido_id = p_partido_id and a.estado_inscripcion = 'confirmado' and b.estado_inscripcion = 'confirmado'
   on conflict (jugador_menor_id, jugador_mayor_id) do update
     set veces_jugado_juntos = historial_companeros.veces_jugado_juntos + 1,
+        victorias_juntos = historial_companeros.victorias_juntos + excluded.victorias_juntos,
+        derrotas_juntos = historial_companeros.derrotas_juntos + excluded.derrotas_juntos,
+        empates_juntos = historial_companeros.empates_juntos + excluded.empates_juntos,
+        ultimo_partido_id = p_partido_id,
+        updated_at = now();
+
+  -- Historial de compañeros, equipo B: mismo mecanismo, con el
+  -- resultado (inverso) de B.
+  insert into historial_companeros (
+    jugador_menor_id, jugador_mayor_id, veces_jugado_juntos,
+    victorias_juntos, derrotas_juntos, empates_juntos, ultimo_partido_id
+  )
+  select least(a.jugador_id, b.jugador_id), greatest(a.jugador_id, b.jugador_id),
+         1, v_incr_victoria_b, v_incr_derrota_b, v_incr_empate_b, p_partido_id
+  from inscripciones a join inscripciones b
+    on a.partido_id = b.partido_id and a.equipo = 'B' and b.equipo = 'B' and a.jugador_id < b.jugador_id
+  where a.partido_id = p_partido_id and a.estado_inscripcion = 'confirmado' and b.estado_inscripcion = 'confirmado'
+  on conflict (jugador_menor_id, jugador_mayor_id) do update
+    set veces_jugado_juntos = historial_companeros.veces_jugado_juntos + 1,
+        victorias_juntos = historial_companeros.victorias_juntos + excluded.victorias_juntos,
+        derrotas_juntos = historial_companeros.derrotas_juntos + excluded.derrotas_juntos,
+        empates_juntos = historial_companeros.empates_juntos + excluded.empates_juntos,
         ultimo_partido_id = p_partido_id,
         updated_at = now();
 end;

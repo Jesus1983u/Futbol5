@@ -4,7 +4,7 @@
 
 export type TipoJugador = 'registrado' | 'invitado';
 export type RolUsuario = 'admin' | 'jugador';
-export type Posicion = 'atacante' | 'defensor';
+export type Posicion = 'atacante' | 'defensor' | 'mixto';
 export type EstadoPartido = 'abierto' | 'cerrado' | 'cancelado' | 'jugado';
 export type DisponibilidadEstado = 'pendiente' | 'voy' | 'no_voy';
 export type InscripcionEstado = 'confirmado' | 'lista_espera' | 'cancelado';
@@ -24,6 +24,10 @@ export interface Jugador {
   posicion_confirmada: boolean;
   rating_actual: number;
   rating_inicial_confirmado: boolean;
+  // Media móvil exponencial de cuánto mejor/peor rinde este jugador
+  // frente a lo que el Elo previo de su equipo predecía. -1..1, 0 =
+  // neutro. Ver fn_finalizar_partido en schema.sql.
+  impacto_victoria: number;
   partidos_jugados: number;
   victorias: number;
   derrotas: number;
@@ -84,6 +88,7 @@ export interface JugadorParaGenerador {
   nombre: string;
   rating: number;
   posicion: Posicion;
+  impactoVictoria: number;
 }
 
 // Refleja la vista vista_estadisticas_jugadores (porcentaje_victorias
@@ -96,6 +101,7 @@ export interface EstadisticasJugador {
   rol: RolUsuario;
   posicion_preferida: Posicion;
   rating_actual: number;
+  impacto_victoria: number;
   partidos_jugados: number;
   victorias: number;
   derrotas: number;

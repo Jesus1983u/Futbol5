@@ -11,7 +11,7 @@
 // =====================================================================
 
 import { useState } from 'react';
-import { construirMapaHistorial, generarEquipos, type ResultadoGeneracion } from '../lib/teamGenerator';
+import { construirMapaSinergia, generarEquipos, type ResultadoGeneracion } from '../lib/teamGenerator';
 import { guardarEquipos, obtenerHistorialPares } from '../lib/partidos';
 import type { InscripcionConJugador } from '../types/database';
 
@@ -44,14 +44,24 @@ export function GenerarEquiposPanel({
     setGenerando(true);
     try {
       const pares = await obtenerHistorialPares();
-      const historial = construirMapaHistorial(pares);
+      const sinergia = construirMapaSinergia(
+        pares.map((p) => ({
+          jugadorA: p.jugadorA,
+          jugadorB: p.jugadorB,
+          partidos: p.veces,
+          victorias: p.victorias,
+          derrotas: p.derrotas,
+          empates: p.empates,
+        }))
+      );
       const jugadoresParaGenerador = confirmados.map((i) => ({
         id: i.jugador.id,
         nombre: i.jugador.nombre,
         rating: i.jugador.rating_actual,
         posicion: i.jugador.posicion_preferida,
+        impactoVictoria: i.jugador.impacto_victoria,
       }));
-      setPropuesta(generarEquipos(jugadoresParaGenerador, historial));
+      setPropuesta(generarEquipos(jugadoresParaGenerador, sinergia));
     } catch {
       setError('No se pudo generar los equipos. Inténtalo de nuevo.');
     } finally {

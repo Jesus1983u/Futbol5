@@ -8,6 +8,7 @@
 // =====================================================================
 
 import { supabase } from './supabase';
+import { calcularSinergia, MIN_PARTIDOS_PARA_SINERGIA } from './teamGenerator';
 import type {
   EstadisticasJugador,
   Inscripcion,
@@ -164,17 +165,25 @@ export interface ParEnHistorial {
   jugadorA: string;
   jugadorB: string;
   veces: number;
+  victorias: number;
+  derrotas: number;
+  empates: number;
 }
 
 export async function obtenerHistorialPares(): Promise<ParEnHistorial[]> {
   const { data, error } = await supabase
     .from('historial_companeros')
-    .select('jugador_menor_id, jugador_mayor_id, veces_jugado_juntos');
+    .select(
+      'jugador_menor_id, jugador_mayor_id, veces_jugado_juntos, victorias_juntos, derrotas_juntos, empates_juntos'
+    );
   if (error) throw error;
   return (data ?? []).map((fila) => ({
     jugadorA: fila.jugador_menor_id,
     jugadorB: fila.jugador_mayor_id,
     veces: fila.veces_jugado_juntos,
+    victorias: fila.victorias_juntos,
+    derrotas: fila.derrotas_juntos,
+    empates: fila.empates_juntos,
   }));
 }
 
@@ -182,6 +191,7 @@ export interface ParConNombres {
   nombreA: string;
   nombreB: string;
   veces: number;
+  sinergia: number;
 }
 
 /** Para la pantalla de Historial: igual que obtenerHistorialPares pero
@@ -204,8 +214,57 @@ export async function listarHistorialCompaneros(): Promise<ParConNombres[]> {
       nombreA: nombrePorId.get(p.jugadorA) ?? '(jugador dado de baja)',
       nombreB: nombrePorId.get(p.jugadorB) ?? '(jugador dado de baja)',
       veces: p.veces,
+      sinergia: calcularSinergia(p.victorias, p.derrotas, p.veces),
     }))
     .sort((a, b) => b.veces - a.veces);
+}
+
+export interface CompaneroDestacado {
+  nombre: string;
+  sinergia: number;
+  partidos: number;
+}
+
+/** Mejor y peor compañero histórico de un jugador, para mostrar en su
+ *  perfil. "Mejor"/"peor" se basa en la sinergia (ver
+ *  src/lib/teamGenerator.ts::calcularSinergia), no en la frecuencia —
+ *  jugar mucho junto a alguien no es lo mismo que ganar más de lo
+ *  esperado con esa persona. Si no hay ninguna pareja con al menos
+ *  MIN_PARTIDOS_PARA_SINERGIA partidos juntos, ambos salen null en
+ *  vez de mostrar un dato poco fiable basado en 1-2 partidos. */
+export async function obtenerMejorPeorCompanero(
+  jugadorId: string
+): Promise<{ mejor: CompaneroDestacado | null; peor: CompaneroDestacado | null }> {
+  const [pares, { data: jugadores, error }] = await Promise.all([
+    obtenerHistorialPares(),
+    supabase.from('jugadores').select('id, nombre, apellidos'),
+  ]);
+  if (error) throw error;
+  const nombrePorId = new Map(
+    (jugadores ?? []).map((j) => [j.id as string, `${j.nombre} ${j.apellidos ?? ''}`.trim()])
+  );
+
+  const propios = pares
+    .filter((p) => p.jugadorA === jugadorId || p.jugadorB === jugadorId)
+    .filter((p) => p.veces >= MIN_PARTIDOS_PARA_SINERGIA)
+    .map((p) => {
+      const otroId = p.jugadorA === jugadorId ? p.jugadorB : p.jugadorA;
+      return {
+        nombre: nombrePorId.get(otroId) ?? '(jugador dado de baja)',
+        sinergia: calcularSinergia(p.victorias, p.derrotas, p.veces),
+        partidos: p.veces,
+      };
+    });
+
+  if (propios.length === 0) return { mejor: null, peor: null };
+
+  const ordenados = [...propios].sort((a, b) => b.sinergia - a.sinergia);
+  const mejor = ordenados[0];
+  const peor = ordenados[ordenados.length - 1];
+  // Si solo hay una pareja con datos suficientes, mejor y peor serían
+  // la misma persona — más confuso que útil, así que en ese caso solo
+  // se devuelve "mejor".
+  return { mejor, peor: peor.nombre === mejor.nombre ? null : peor };
 }
 
 export async function guardarEquipos(

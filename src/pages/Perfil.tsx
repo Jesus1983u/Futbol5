@@ -7,7 +7,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { obtenerEstadisticas } from '../lib/partidos';
+import { obtenerEstadisticas, obtenerMejorPeorCompanero, type CompaneroDestacado } from '../lib/partidos';
 import { listarPagosPendientesDe } from '../lib/pagos';
 import { Avatar } from '../components/Avatar';
 import { formatearFechaCorta } from '../lib/fecha';
@@ -23,6 +23,10 @@ export function Perfil() {
   const [mensaje, setMensaje] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null);
   const [stats, setStats] = useState<EstadisticasJugador | null>(null);
   const [pagosPendientes, setPagosPendientes] = useState<PagoPendiente[]>([]);
+  const [companeros, setCompaneros] = useState<{
+    mejor: CompaneroDestacado | null;
+    peor: CompaneroDestacado | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!jugador) return;
@@ -32,6 +36,7 @@ export function Perfil() {
 
     obtenerEstadisticas(jugador.id).then(setStats);
     listarPagosPendientesDe(jugador.id).then(setPagosPendientes);
+    obtenerMejorPeorCompanero(jugador.id).then(setCompaneros);
   }, [jugador]);
 
   if (!jugador) {
@@ -123,6 +128,41 @@ export function Perfil() {
             <Estadistica etiqueta="D" valor={stats.derrotas} />
             <Estadistica etiqueta="%" valor={stats.porcentaje_victorias} />
           </dl>
+
+          <div className="mt-4 space-y-2 border-t border-pitch-line pt-3">
+            <FilaDato
+              etiqueta="Posición preferida"
+              valor={
+                stats.posicion_preferida === 'mixto'
+                  ? 'Mixto (atacante o defensor)'
+                  : stats.posicion_preferida
+              }
+              capitalizar
+            />
+            <FilaDato
+              etiqueta="Impacto en victoria"
+              valor={formatearImpacto(stats.impacto_victoria)}
+              ayuda="Cuánto mejor (o peor) rinden tus equipos de lo que el rating previo predecía. 0 = neutro."
+            />
+            {companeros?.mejor && (
+              <FilaDato
+                etiqueta="Mejor compañero histórico"
+                valor={`${companeros.mejor.nombre} (${companeros.mejor.partidos} partidos juntos)`}
+              />
+            )}
+            {companeros?.peor && (
+              <FilaDato
+                etiqueta="Peor compañero histórico"
+                valor={`${companeros.peor.nombre} (${companeros.peor.partidos} partidos juntos)`}
+              />
+            )}
+            {companeros && !companeros.mejor && (
+              <p className="font-body text-xs text-muted">
+                Todavía no hay suficientes partidos junto a un mismo compañero para calcular
+                afinidades.
+              </p>
+            )}
+          </div>
         </section>
       )}
 
@@ -164,8 +204,8 @@ export function Perfil() {
             </>
           ) : (
             <>
-              <div className="mt-1 grid grid-cols-2 gap-2">
-                {(['atacante', 'defensor'] as const).map((opcion) => (
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                {(['atacante', 'defensor', 'mixto'] as const).map((opcion) => (
                   <button
                     key={opcion}
                     type="button"
@@ -181,8 +221,10 @@ export function Perfil() {
                 ))}
               </div>
               <p className="mt-1 font-body text-xs text-muted">
-                Elígela con cuidado: en cuanto guardes, queda fijada y no podrás cambiarla tú
-                mismo más adelante.
+                "Mixto" significa que puedes jugar de atacante o de defensor — el generador de
+                equipos te colocará donde más ayude a equilibrar cada partido. Elígela con
+                cuidado: en cuanto guardes, queda fijada y no podrás cambiarla tú mismo más
+                adelante.
               </p>
             </>
           )}
@@ -228,6 +270,40 @@ export function Perfil() {
           Votar el ranking inicial del grupo
         </Link>
       </div>
+    </div>
+  );
+}
+
+/** "+0.42" / "-0.18" / "0.00" — siempre con signo explícito en los
+ *  positivos, para que se note de un vistazo si es buena o mala
+ *  noticia sin tener que leer el número con atención. */
+function formatearImpacto(valor: number): string {
+  const redondeado = Math.round(valor * 100) / 100;
+  return redondeado > 0 ? `+${redondeado.toFixed(2)}` : redondeado.toFixed(2);
+}
+
+function FilaDato({
+  etiqueta,
+  valor,
+  ayuda,
+  capitalizar,
+}: {
+  etiqueta: string;
+  valor: string;
+  ayuda?: string;
+  capitalizar?: boolean;
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-body text-xs text-muted">{etiqueta}</span>
+        <span
+          className={`text-right font-body text-sm text-chalk ${capitalizar ? 'capitalize' : ''}`}
+        >
+          {valor}
+        </span>
+      </div>
+      {ayuda && <p className="mt-0.5 font-body text-[11px] text-muted">{ayuda}</p>}
     </div>
   );
 }

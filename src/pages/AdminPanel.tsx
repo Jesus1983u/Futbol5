@@ -203,6 +203,7 @@ function FormularioCrearUsuario({
         >
           <option value="atacante">Atacante</option>
           <option value="defensor">Defensor</option>
+          <option value="mixto">Mixto</option>
         </select>
         <select
           value={rol}
@@ -331,6 +332,7 @@ function FormularioJugador({
         >
           <option value="atacante">Atacante</option>
           <option value="defensor">Defensor</option>
+          <option value="mixto">Mixto</option>
         </select>
         <select
           value={rol}
