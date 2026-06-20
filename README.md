@@ -153,6 +153,19 @@ acuerdo) y la aplicas una a una con "Aplicar". Esto solo hace falta
 una vez, al arrancar el grupo — a partir de ahí los ratings ya se
 recalculan solos con cada resultado.
 
+**Quién ha votado y quién falta (nuevo).** Justo debajo del contador
+de "X personas han votado hasta ahora" hay un enlace, "¿Quién falta
+por votar?", que despliega dos listas: quién ya ha votado y quién
+todavía no, por nombre — así puedes reclamárselo directamente a quien
+falte en vez de preguntar uno a uno por el grupo. Solo cuenta a
+jugadores activos con cuenta propia (los invitados nunca votan, solo
+se les vota a ellos, así que no aparecen en ninguna de las dos listas).
+Por debajo es una consulta nueva (`obtenerEstadoVotacion` en
+`src/lib/admin.ts`) que cruza la lista de jugadores con
+`rankings_iniciales` — no hizo falta tocar la base de datos, los
+permisos para que el admin vea todos los votos ya estaban puestos
+desde el principio.
+
 **Dos correcciones más al construir esto de verdad:**
 
 Primera: `fn_finalizar_partido` no comprobaba si el partido ya tenía

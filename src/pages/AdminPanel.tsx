@@ -12,6 +12,8 @@ import {
   contarVotantes,
   crearUsuarioCompleto,
   listarTodosLosJugadores,
+  obtenerEstadoVotacion,
+  type EstadoVotacion,
   type RatingSugerido,
 } from '../lib/admin';
 import { useAuth } from '../hooks/useAuth';
@@ -394,6 +396,8 @@ function FormularioJugador({
 function SeccionRanking() {
   const [sugerencias, setSugerencias] = useState<RatingSugerido[] | null>(null);
   const [votantes, setVotantes] = useState<number | null>(null);
+  const [estadoVotacion, setEstadoVotacion] = useState<EstadoVotacion | null>(null);
+  const [mostrarDetalle, setMostrarDetalle] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [calculando, setCalculando] = useState(false);
   const [aplicandoId, setAplicandoId] = useState<string | null>(null);
@@ -401,6 +405,7 @@ function SeccionRanking() {
 
   useEffect(() => {
     contarVotantes().then(setVotantes).catch(() => {});
+    obtenerEstadoVotacion().then(setEstadoVotacion).catch(() => {});
   }, []);
 
   async function calcular() {
@@ -433,9 +438,59 @@ function SeccionRanking() {
           {votantes ?? '…'} persona{votantes === 1 ? '' : 's'} ha
           {votantes === 1 ? '' : 'n'} votado hasta ahora.
         </p>
+
+        {estadoVotacion && (
+          <>
+            <button
+              onClick={() => setMostrarDetalle((v) => !v)}
+              className="mt-1 font-body text-xs font-semibold uppercase tracking-wide text-floodlight hover:text-floodlight-dim"
+            >
+              {mostrarDetalle ? 'Ocultar quién falta' : '¿Quién falta por votar?'}
+            </button>
+
+            {mostrarDetalle && (
+              <div className="mt-3 space-y-3">
+                {estadoVotacion.noHaVotado.length > 0 ? (
+                  <div>
+                    <p className="font-body text-xs uppercase tracking-wide text-danger">
+                      Aún no han votado ({estadoVotacion.noHaVotado.length})
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {estadoVotacion.noHaVotado.map((j) => (
+                        <li key={j.id} className="font-body text-sm text-chalk">
+                          {j.nombre}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="font-body text-sm text-confirmed">
+                    Todo el mundo ha votado ya.
+                  </p>
+                )}
+
+                {estadoVotacion.haVotado.length > 0 && (
+                  <div>
+                    <p className="font-body text-xs uppercase tracking-wide text-confirmed">
+                      Ya han votado ({estadoVotacion.haVotado.length})
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {estadoVotacion.haVotado.map((j) => (
+                        <li key={j.id} className="font-body text-sm text-muted">
+                          {j.nombre}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
         <Link
           to="/votacion"
-          className="mt-1 inline-block font-body text-sm text-floodlight hover:text-floodlight-dim"
+          className="mt-3 inline-block font-body text-sm text-floodlight hover:text-floodlight-dim"
         >
           Ir a votar tu propio ranking →
         </Link>

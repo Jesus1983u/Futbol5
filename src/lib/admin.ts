@@ -126,3 +126,45 @@ export async function contarVotantes(): Promise<number> {
   if (error) throw error;
   return new Set((data ?? []).map((f) => f.votante_id)).size;
 }
+
+export interface EstadoVotacion {
+  haVotado: { id: string; nombre: string }[];
+  noHaVotado: { id: string; nombre: string }[];
+}
+
+/** Quién ha votado el ranking inicial y quién no, entre los jugadores
+ *  activos del grupo — para que el admin pueda reclamar el voto a
+ *  quien falte sin tener que preguntar uno a uno. Los invitados no
+ *  cuentan como "pendientes" aquí: nunca se les pide votar, solo se
+ *  les vota a ellos. */
+export async function obtenerEstadoVotacion(): Promise<EstadoVotacion> {
+  const [{ data: jugadores, error: errorJugadores }, { data: votos, error: errorVotos }] =
+    await Promise.all([
+      supabase
+        .from('jugadores')
+        .select('id, nombre, apellidos, tipo')
+        .eq('activo', true)
+        .eq('tipo', 'registrado'),
+      supabase.from('rankings_iniciales').select('votante_id'),
+    ]);
+  if (errorJugadores) throw errorJugadores;
+  if (errorVotos) throw errorVotos;
+
+  const idsQueVotaron = new Set((votos ?? []).map((v) => v.votante_id as string));
+  const haVotado: { id: string; nombre: string }[] = [];
+  const noHaVotado: { id: string; nombre: string }[] = [];
+
+  for (const j of jugadores ?? []) {
+    const nombreCompleto = `${j.nombre} ${j.apellidos ?? ''}`.trim();
+    if (idsQueVotaron.has(j.id as string)) {
+      haVotado.push({ id: j.id as string, nombre: nombreCompleto });
+    } else {
+      noHaVotado.push({ id: j.id as string, nombre: nombreCompleto });
+    }
+  }
+
+  haVotado.sort((a, b) => a.nombre.localeCompare(b.nombre));
+  noHaVotado.sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  return { haVotado, noHaVotado };
+}
