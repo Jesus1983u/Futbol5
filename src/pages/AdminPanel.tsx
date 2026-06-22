@@ -422,13 +422,27 @@ function SeccionRanking() {
     }
   }
 
+  const [aplicados, setAplicados] = useState<Set<string>>(new Set());
+
   async function aplicar(jugadorId: string) {
-    const valor = Number(ratings[jugadorId]);
-    if (Number.isNaN(valor)) return;
+    const rawValor = ratings[jugadorId];
+    const valor = Number(rawValor);
+
+    if (rawValor === undefined || rawValor === '' || Number.isNaN(valor)) {
+      setError('El campo de rating está vacío o no es un número válido.');
+      return;
+    }
+
+    setError(null);
     setAplicandoId(jugadorId);
     const { error } = await aplicarRatingInicial(jugadorId, valor);
     setAplicandoId(null);
-    if (error) setError('No se pudo aplicar ese rating.');
+
+    if (error) {
+      setError(`No se pudo aplicar ese rating: ${error}`);
+    } else {
+      setAplicados((prev) => new Set([...prev, jugadorId]));
+    }
   }
 
   return (
@@ -534,9 +548,17 @@ function SeccionRanking() {
                 <button
                   onClick={() => void aplicar(s.jugador_id)}
                   disabled={aplicandoId === s.jugador_id}
-                  className="font-body text-xs font-semibold text-confirmed hover:underline disabled:opacity-60"
+                  className={`font-body text-xs font-semibold disabled:opacity-60 ${
+                    aplicados.has(s.jugador_id)
+                      ? 'text-confirmed'
+                      : 'text-floodlight hover:underline'
+                  }`}
                 >
-                  Aplicar
+                  {aplicandoId === s.jugador_id
+                    ? 'Aplicando…'
+                    : aplicados.has(s.jugador_id)
+                    ? '✓ Aplicado'
+                    : 'Aplicar'}
                 </button>
               </div>
             ))}

@@ -689,6 +689,7 @@ $$;
 create or replace function fn_calcular_ratings_iniciales()
 returns table(jugador_id uuid, nombre text, puntos_borda numeric, rating_sugerido numeric)
 language plpgsql as $$
+#variable_conflict use_column
 declare
   v_min numeric; v_max numeric;
 begin
@@ -697,16 +698,16 @@ begin
     select r.jugador_id,
            sum(
              (select count(*) from rankings_iniciales r2 where r2.votante_id = r.votante_id) - r.posicion + 1
-           ) as puntos_borda
+           ) as total_puntos
     from rankings_iniciales r
     group by r.jugador_id
   ),
   rango as (
-    select min(puntos_borda) as v_min, max(puntos_borda) as v_max from puntos
+    select min(puntos.total_puntos) as v_min, max(puntos.total_puntos) as v_max from puntos
   )
-  select p.jugador_id, j.nombre, p.puntos_borda,
+  select p.jugador_id, j.nombre, p.total_puntos,
          case when rango.v_max = rango.v_min then 50
-              else round(((p.puntos_borda - rango.v_min) / (rango.v_max - rango.v_min)) * 100, 1)
+              else round(((p.total_puntos - rango.v_min) / (rango.v_max - rango.v_min)) * 100, 1)
          end as rating_sugerido
   from puntos p
   join jugadores j on j.id = p.jugador_id

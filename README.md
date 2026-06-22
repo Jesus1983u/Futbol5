@@ -166,6 +166,24 @@ Por debajo es una consulta nueva (`obtenerEstadoVotacion` en
 permisos para que el admin vea todos los votos ya estaban puestos
 desde el principio.
 
+**Bug real arreglado: "Calcular ranking sugerido" daba error con
+votos de verdad.** Con dos o más personas votadas, pulsar ese botón
+fallaba con `column reference "puntos_borda" is ambiguous`. La causa:
+`fn_calcular_ratings_iniciales()` declara una columna de salida
+llamada `puntos_borda`, y PL/pgSQL convierte automáticamente cada
+columna de un `returns table(...)` en una variable más dentro de la
+función — una de las consultas internas usaba ese mismo nombre sin
+decir de qué tabla venía, y Postgres se negó a adivinar entre la
+variable y la columna. Lo arreglé renombrando la columna intermedia
+(`total_puntos` en vez de `puntos_borda`, evita la colisión del
+todo) y añadiendo `#variable_conflict use_column` al principio de la
+función, que le dice a Postgres que ante cualquier ambigüedad de este
+tipo prefiera siempre la columna de la consulta. Esta vez no me he
+quedado solo con que compilara: instalé un Postgres real, reproduje
+el error exacto con la versión anterior de la función usando datos de
+prueba parecidos a los tuyos (2 votantes, varios candidatos), y
+confirmé que la versión corregida da el resultado correcto sin fallar.
+
 **Dos correcciones más al construir esto de verdad:**
 
 Primera: `fn_finalizar_partido` no comprobaba si el partido ya tenía
