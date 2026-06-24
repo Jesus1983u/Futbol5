@@ -278,13 +278,14 @@ function FormularioJugador({
   const [rol, setRol] = useState<RolUsuario>(jugador.rol);
   const [tipo, setTipo] = useState(jugador.tipo);
   const [activo, setActivo] = useState(jugador.activo);
+  const [ratingEstimado, setRatingEstimado] = useState(String(Math.round(jugador.rating_actual)));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function guardar() {
     setError(null);
     setGuardando(true);
-    const { error } = await actualizarJugadorAdmin(jugador.id, {
+    const cambios: Parameters<typeof actualizarJugadorAdmin>[1] = {
       nombre: nombre.trim(),
       apellidos: apellidos.trim() || null,
       telefono: telefono.trim() || null,
@@ -292,7 +293,14 @@ function FormularioJugador({
       rol,
       tipo,
       activo,
-    });
+    };
+    if (jugador.tipo === 'invitado') {
+      const r = Number(ratingEstimado);
+      if (!Number.isNaN(r) && r >= 0 && r <= 100) {
+        cambios.rating_actual = r;
+      }
+    }
+    const { error } = await actualizarJugadorAdmin(jugador.id, cambios);
     setGuardando(false);
     if (error) {
       setError(`No se pudo guardar: ${error}`);
@@ -362,6 +370,24 @@ function FormularioJugador({
           entrado nunca.
         </p>
       </div>
+
+      {jugador.tipo === 'invitado' && (
+        <div>
+          <label className="block font-body text-sm text-muted">Nivel estimado (0–100)</label>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={ratingEstimado}
+            onChange={(e) => setRatingEstimado(e.target.value)}
+            className="mt-1 w-full rounded-md border border-pitch-line bg-pitch-deep px-2 py-1.5 font-body text-sm tabular-nums text-chalk"
+          />
+          <p className="mt-1 font-body text-xs text-muted">
+            Solo editable en invitados — el de los jugadores registrados lo calcula el sistema
+            automáticamente con cada partido.
+          </p>
+        </div>
+      )}
 
       <label className="flex items-center gap-2 font-body text-sm text-chalk">
         <input type="checkbox" checked={activo} onChange={(e) => setActivo(e.target.checked)} />

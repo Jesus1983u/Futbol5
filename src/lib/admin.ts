@@ -29,6 +29,7 @@ export interface CambiosJugadorAdmin {
   rol: RolUsuario;
   tipo: Jugador['tipo'];
   activo: boolean;
+  rating_actual?: number;
 }
 
 export async function actualizarJugadorAdmin(
