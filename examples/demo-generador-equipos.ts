@@ -11,16 +11,16 @@ import { calcularCambioElo } from '../src/lib/elo';
 import type { JugadorParaGenerador } from '../src/types/database';
 
 const jugadores: JugadorParaGenerador[] = [
-  { id: '1', nombre: 'Jesús', rating: 85, posicion: 'atacante', impactoVictoria: 0.3 },
-  { id: '2', nombre: 'Juan', rating: 80, posicion: 'defensor', impactoVictoria: 0.1 },
-  { id: '3', nombre: 'Rafa', rating: 78, posicion: 'atacante', impactoVictoria: -0.1 },
-  { id: '4', nombre: 'Pepe', rating: 75, posicion: 'defensor', impactoVictoria: 0 },
-  { id: '5', nombre: 'Luis', rating: 70, posicion: 'mixto', impactoVictoria: 0.05 },
-  { id: '6', nombre: 'Manolo', rating: 68, posicion: 'defensor', impactoVictoria: 0 },
-  { id: '7', nombre: 'Antonio', rating: 60, posicion: 'atacante', impactoVictoria: -0.2 },
-  { id: '8', nombre: 'Curro', rating: 55, posicion: 'defensor', impactoVictoria: 0 },
-  { id: '9', nombre: 'Sergio', rating: 50, posicion: 'atacante', impactoVictoria: 0.15 },
-  { id: '10', nombre: 'Pablo', rating: 40, posicion: 'atacante', impactoVictoria: 0 },
+  { id: '1', nombre: 'Jesús', apellidos: null, rating: 85, posicion: 'atacante', impactoVictoria: 0.3 },
+  { id: '2', nombre: 'Juan', apellidos: null, rating: 80, posicion: 'defensor', impactoVictoria: 0.1 },
+  { id: '3', nombre: 'Rafa', apellidos: null, rating: 78, posicion: 'atacante', impactoVictoria: -0.1 },
+  { id: '4', nombre: 'Pepe', apellidos: null, rating: 75, posicion: 'defensor', impactoVictoria: 0 },
+  { id: '5', nombre: 'Luis', apellidos: null, rating: 70, posicion: 'mixto', impactoVictoria: 0.05 },
+  { id: '6', nombre: 'Manolo', apellidos: null, rating: 68, posicion: 'defensor', impactoVictoria: 0 },
+  { id: '7', nombre: 'Antonio', apellidos: null, rating: 60, posicion: 'atacante', impactoVictoria: -0.2 },
+  { id: '8', nombre: 'Curro', apellidos: null, rating: 55, posicion: 'defensor', impactoVictoria: 0 },
+  { id: '9', nombre: 'Sergio', apellidos: null, rating: 50, posicion: 'atacante', impactoVictoria: 0.15 },
+  { id: '10', nombre: 'Pablo', apellidos: null, rating: 40, posicion: 'atacante', impactoVictoria: 0 },
 ];
 
 // Jesús y Juan han jugado juntos 25 veces y han ganado 20 de ellas ->

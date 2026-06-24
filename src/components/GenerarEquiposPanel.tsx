@@ -57,6 +57,7 @@ export function GenerarEquiposPanel({
       const jugadoresParaGenerador = confirmados.map((i) => ({
         id: i.jugador.id,
         nombre: i.jugador.nombre,
+        apellidos: i.jugador.apellidos,
         rating: i.jugador.rating_actual,
         posicion: i.jugador.posicion_preferida,
         impactoVictoria: i.jugador.impacto_victoria,
@@ -361,7 +362,7 @@ function ColumnaManual({
               onClick={() => onTocar(i.jugador.id)}
               className="w-full rounded px-1.5 py-1 text-left font-body text-sm text-chalk transition-colors hover:bg-pitch-line"
             >
-              {i.jugador.nombre}
+              {nombreCompleto(i.jugador.nombre, i.jugador.apellidos)}
             </button>
           </li>
         ))}
@@ -373,17 +374,21 @@ function ColumnaManual({
   );
 }
 
+function nombreCompleto(nombre: string, apellidos: string | null | undefined): string {
+  return apellidos ? `${nombre} ${apellidos}` : nombre;
+}
+
 function PreviewEquipos({ propuesta }: { propuesta: ResultadoGeneracion }) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <ColumnaEquipo
         titulo="Equipo A"
-        nombres={propuesta.equipoA.jugadores.map((j) => j.nombre)}
+        nombres={propuesta.equipoA.jugadores.map((j) => nombreCompleto(j.nombre, j.apellidos))}
         rating={propuesta.equipoA.ratingTotal}
       />
       <ColumnaEquipo
         titulo="Equipo B"
-        nombres={propuesta.equipoB.jugadores.map((j) => j.nombre)}
+        nombres={propuesta.equipoB.jugadores.map((j) => nombreCompleto(j.nombre, j.apellidos))}
         rating={propuesta.equipoB.ratingTotal}
       />
     </div>
@@ -404,12 +409,12 @@ function DosEquipos({
     <div className="mt-2 grid grid-cols-2 gap-3">
       <ColumnaEquipo
         titulo="Equipo A"
-        nombres={equipoA.map((i) => i.jugador.nombre)}
+        nombres={equipoA.map((i) => nombreCompleto(i.jugador.nombre, i.jugador.apellidos))}
         rating={rating(equipoA)}
       />
       <ColumnaEquipo
         titulo="Equipo B"
-        nombres={equipoB.map((i) => i.jugador.nombre)}
+        nombres={equipoB.map((i) => nombreCompleto(i.jugador.nombre, i.jugador.apellidos))}
         rating={rating(equipoB)}
       />
     </div>

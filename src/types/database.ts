@@ -86,6 +86,7 @@ export interface HistorialCompanero {
 export interface JugadorParaGenerador {
   id: string;
   nombre: string;
+  apellidos: string | null;
   rating: number;
   posicion: Posicion;
   impactoVictoria: number;
