@@ -303,13 +303,13 @@ function EquiposManual({
 
       <div className="mt-2 grid grid-cols-2 gap-3">
         <ColumnaManual
-          titulo="Equipo A"
+          titulo="⬜ Blancos"
           inscripciones={equipoA}
           rating={ratingDe(equipoA)}
           onTocar={mover}
         />
         <ColumnaManual
-          titulo="Equipo B"
+          titulo="⬛ Negros"
           inscripciones={equipoB}
           rating={ratingDe(equipoB)}
           onTocar={mover}
@@ -382,12 +382,14 @@ function PreviewEquipos({ propuesta }: { propuesta: ResultadoGeneracion }) {
   return (
     <div className="grid grid-cols-2 gap-3">
       <ColumnaEquipo
-        titulo="Equipo A"
+        titulo="⬜ Blancos"
+        color="blanco"
         nombres={propuesta.equipoA.jugadores.map((j) => nombreCompleto(j.nombre, j.apellidos))}
         rating={propuesta.equipoA.ratingTotal}
       />
       <ColumnaEquipo
-        titulo="Equipo B"
+        titulo="⬛ Negros"
+        color="negro"
         nombres={propuesta.equipoB.jugadores.map((j) => nombreCompleto(j.nombre, j.apellidos))}
         rating={propuesta.equipoB.ratingTotal}
       />
@@ -408,12 +410,14 @@ function DosEquipos({
   return (
     <div className="mt-2 grid grid-cols-2 gap-3">
       <ColumnaEquipo
-        titulo="Equipo A"
+        titulo="⬜ Blancos"
+        color="blanco"
         nombres={equipoA.map((i) => nombreCompleto(i.jugador.nombre, i.jugador.apellidos))}
         rating={rating(equipoA)}
       />
       <ColumnaEquipo
-        titulo="Equipo B"
+        titulo="⬛ Negros"
+        color="negro"
         nombres={equipoB.map((i) => nombreCompleto(i.jugador.nombre, i.jugador.apellidos))}
         rating={rating(equipoB)}
       />
@@ -423,17 +427,32 @@ function DosEquipos({
 
 function ColumnaEquipo({
   titulo,
+  color,
   nombres,
   rating,
 }: {
   titulo: string;
+  color: 'blanco' | 'negro';
   nombres: string[];
   rating: number;
 }) {
+  const esBlanco = color === 'blanco';
   return (
-    <div className="rounded-md border border-pitch-line bg-pitch-deep p-3">
+    <div
+      className={`rounded-md border p-3 ${
+        esBlanco
+          ? 'border-chalk/30 bg-chalk/10'
+          : 'border-pitch-line bg-pitch-deep'
+      }`}
+    >
       <div className="flex items-baseline justify-between">
-        <p className="font-display text-sm uppercase tracking-wide text-chalk">{titulo}</p>
+        <p
+          className={`font-display text-sm uppercase tracking-wide ${
+            esBlanco ? 'text-chalk' : 'text-chalk'
+          }`}
+        >
+          {titulo}
+        </p>
         <p className="font-display text-sm tabular-nums text-floodlight">{rating}</p>
       </div>
       <ul className="mt-2 space-y-1">
