@@ -28,6 +28,7 @@ export interface Jugador {
   // frente a lo que el Elo previo de su equipo predecía. -1..1, 0 =
   // neutro. Ver fn_finalizar_partido en schema.sql.
   impacto_victoria: number;
+  mvps_recibidos: number;
   partidos_jugados: number;
   victorias: number;
   derrotas: number;
@@ -103,6 +104,7 @@ export interface EstadisticasJugador {
   posicion_preferida: Posicion;
   rating_actual: number;
   impacto_victoria: number;
+  mvps_recibidos: number;
   partidos_jugados: number;
   victorias: number;
   derrotas: number;

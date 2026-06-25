@@ -4,7 +4,7 @@
 // =====================================================================
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import {
   actualizarEstadoPartido,
@@ -148,6 +148,15 @@ export function PartidoDetalle() {
           </p>
         )}
 
+      {partido.estado === 'jugado' && jugador && jugador.tipo === 'registrado' && (
+        <Link
+          to={`/partidos/${partido.id}/mvp`}
+          className="mt-3 flex items-center justify-center gap-1.5 rounded-md border border-floodlight px-4 py-2 font-display text-sm font-semibold uppercase tracking-wide text-floodlight transition-colors hover:bg-floodlight/10"
+        >
+          🏆 Votar MVP del partido
+        </Link>
+      )}
+
       {error && <p className="mt-3 font-body text-sm text-danger">{error}</p>}
 
       {partido.estado === 'abierto' && jugador && (
@@ -253,12 +262,84 @@ export function PartidoDetalle() {
         />
       )}
 
+      {esAdmin && partido.estado === 'jugado' && (
+        <CerrarMvpAdmin partidoId={partido.id} />
+      )}
+
       {esAdmin && partido.estado !== 'cancelado' && partido.estado !== 'jugado' && (
         <button
           onClick={() => void manejarCancelarPartido()}
           className="mt-6 font-body text-sm text-danger hover:underline"
         >
           Cancelar partido
+        </button>
+      )}
+    </div>
+  );
+}
+
+// =====================================================================
+// Componente de admin: mostrar estado de votación MVP y cerrarla.
+// =====================================================================
+
+import { cerrarVotacionMvp, contarVotosMvp, type ResultadoMvp } from '../lib/mvp';
+
+function CerrarMvpAdmin({ partidoId }: { partidoId: string }) {
+  const [conteo, setConteo] = useState<{ totalVotos: number; totalVotantes: number } | null>(null);
+  const [resultado, setResultado] = useState<ResultadoMvp[] | null>(null);
+  const [cerrando, setCerrando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    contarVotosMvp(partidoId).then(setConteo).catch(() => {});
+  }, [partidoId]);
+
+  async function cerrar() {
+    setError(null);
+    setCerrando(true);
+    const { resultado, error } = await cerrarVotacionMvp(partidoId);
+    setCerrando(false);
+    if (error) { setError(error); return; }
+    setResultado(resultado);
+    contarVotosMvp(partidoId).then(setConteo).catch(() => {});
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-pitch-line bg-pitch-mid p-4">
+      <p className="font-body text-xs uppercase tracking-wide text-muted">Votación MVP</p>
+
+      {conteo && (
+        <p className="mt-1 font-body text-sm text-chalk">
+          {conteo.totalVotos} de {conteo.totalVotantes} jugadores registrados han votado.
+        </p>
+      )}
+
+      {resultado && resultado.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {resultado.map((r) => (
+            <p key={r.equipo} className="font-body text-sm text-confirmed">
+              🏆 MVP {r.equipo}: <span className="font-semibold">{r.mvp_nombre}</span>{' '}
+              ({r.votos_recibidos} {r.votos_recibidos === 1 ? 'voto' : 'votos'}) +1 pto de rating
+            </p>
+          ))}
+        </div>
+      )}
+
+      {resultado && resultado.length === 0 && (
+        <p className="mt-1 font-body text-sm text-muted">
+          No hubo MVP claro (empate en votos o sin votos).
+        </p>
+      )}
+
+      {error && <p className="mt-2 font-body text-sm text-danger">{error}</p>}
+
+      {!resultado && (
+        <button
+          onClick={() => void cerrar()}
+          disabled={cerrando}
+          className="mt-3 rounded-md border border-floodlight px-3 py-1.5 font-body text-sm font-semibold text-floodlight hover:bg-floodlight/10 disabled:opacity-60"
+        >
+          {cerrando ? 'Calculando…' : 'Cerrar votación y aplicar bonus MVP'}
         </button>
       )}
     </div>

@@ -66,6 +66,7 @@ export function Clasificacion() {
             <span className="flex-1">Jugador</span>
             <span>PJ · V-E-D</span>
             <span className="w-10 text-right">Pts</span>
+            <span className="w-8 text-right">MVP</span>
           </div>
           {filas.map((f, indice) => (
             <div
@@ -89,6 +90,9 @@ export function Clasificacion() {
               </div>
               <span className="w-10 text-right font-display text-base tabular-nums text-floodlight">
                 {f.puntos}
+              </span>
+              <span className="w-8 text-right font-body text-sm tabular-nums text-muted" title="MVPs recibidos">
+                {f.mvps_recibidos > 0 ? `🏆${f.mvps_recibidos}` : '—'}
               </span>
             </div>
           ))}

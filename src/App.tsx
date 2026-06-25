@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Perfil } from './pages/Perfil';
 import { Partidos } from './pages/Partidos';
 import { PartidoDetalle } from './pages/PartidoDetalle';
+import { VotarMvp } from './pages/VotarMvp';
 import { CrearPartido } from './pages/CrearPartido';
 import { Pagos } from './pages/Pagos';
 import { AdminPanel } from './pages/AdminPanel';
@@ -38,6 +39,7 @@ export default function App() {
               }
             />
             <Route path="/partidos/:id" element={<PartidoDetalle />} />
+            <Route path="/partidos/:id/mvp" element={<VotarMvp />} />
             <Route
               path="/pagos"
               element={

@@ -65,6 +65,11 @@ create table jugadores (
   derrotas int not null default 0,
   empates int not null default 0,
 
+  -- Total de veces que este jugador ha sido elegido MVP por el equipo
+  -- contrario. Se actualiza en fn_cerrar_votacion_mvp. No sustituye
+  -- al rating Elo — es una columna aparte de reconocimiento.
+  mvps_recibidos int not null default 0,
+
   veces_como_invitado int not null default 0,
   activo boolean not null default true,
 
@@ -199,13 +204,37 @@ create view vista_historial_jugador as
   from historial_companeros;
 
 -- ---------------------------------------------------------------------
+-- TABLA: mvp_votos
+-- ---------------------------------------------------------------------
+-- Cada jugador registrado que participó en un partido vota al MVP del
+-- equipo contrario. Los invitados no votan (tipo='invitado'), aunque
+-- sí pueden ser elegidos MVP por el equipo contrario.
+--
+-- Restricciones importantes (reforzadas también en fn_votar_mvp):
+--   * votante y candidato deben haber jugado ese partido confirmados.
+--   * votante y candidato tienen que ser de equipos distintos.
+--   * cada votante solo puede votar una vez por partido.
+--   * los invitados no pueden votar (solo jugadores registrados).
+-- ---------------------------------------------------------------------
+create table mvp_votos (
+  id uuid primary key default gen_random_uuid(),
+  partido_id uuid not null references partidos(id) on delete cascade,
+  votante_id uuid not null references jugadores(id) on delete cascade,
+  candidato_id uuid not null references jugadores(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (partido_id, votante_id)
+);
+
+create index idx_mvp_votos_partido on mvp_votos(partido_id);
+
+-- ---------------------------------------------------------------------
 -- VISTA: estadísticas (porcentaje de victorias calculado al vuelo,
 -- nunca lo guardamos para evitar que se desincronice)
 -- ---------------------------------------------------------------------
 create view vista_estadisticas_jugadores as
   select
     id, nombre, apellidos, tipo, rol, posicion_preferida, rating_actual,
-    impacto_victoria,
+    impacto_victoria, mvps_recibidos,
     partidos_jugados, victorias, derrotas, empates,
     case when partidos_jugados > 0
          then round((victorias::numeric / partidos_jugados) * 100, 1)
@@ -363,6 +392,38 @@ returns boolean language sql stable as $$
   );
 $$;
 
+-- Devuelve true si el jugador tiene partidos jugados en los que participó
+-- como registrado (no invitado) y todavía no ha votado el MVP. Esto
+-- bloquea la inscripción igual que la deuda pendiente.
+create or replace function fn_tiene_mvp_pendiente(p_jugador_id uuid)
+returns boolean language sql stable as $$
+  select exists (
+    select 1
+    from inscripciones i
+    join partidos p on p.id = i.partido_id
+    join jugadores j on j.id = p_jugador_id
+    where i.jugador_id = p_jugador_id
+      and i.estado_inscripcion = 'confirmado'
+      and p.estado = 'jugado'
+      and j.tipo = 'registrado'
+      -- El partido tiene que tener al menos un jugador en el equipo
+      -- contrario elegible para ser votado (si fue invitado puro con
+      -- solo un equipo, no aplica)
+      and exists (
+        select 1 from inscripciones i2
+        where i2.partido_id = i.partido_id
+          and i2.estado_inscripcion = 'confirmado'
+          and i2.equipo != i.equipo
+      )
+      -- Todavía no ha votado ese partido
+      and not exists (
+        select 1 from mvp_votos v
+        where v.partido_id = i.partido_id
+          and v.votante_id = p_jugador_id
+      )
+  );
+$$;
+
 -- ---------------------------------------------------------------------
 -- Inscribirse a un partido ("Me apunto"), con lista de espera
 -- automática y respeto a la regla de bloqueo por deuda.
@@ -402,6 +463,10 @@ begin
 
   if not v_es_admin and fn_tiene_deuda_pendiente(p_jugador_id) then
     raise exception 'DEUDA_PENDIENTE: Tienes pagos pendientes. Contacta con el administrador para regularizar tu situación.';
+  end if;
+
+  if not v_es_admin and fn_tiene_mvp_pendiente(p_jugador_id) then
+    raise exception 'MVP_PENDIENTE: Tienes que votar el MVP del último partido antes de apuntarte al siguiente.';
   end if;
 
   select estado, jugadores_max into v_estado, v_max
@@ -793,6 +858,184 @@ $$;
 -- Partidos que necesitan recordatorio (24h antes). Pensada para ser
 -- llamada por un Cloudflare Worker con Cron Trigger (ver README).
 -- ---------------------------------------------------------------------
+-- ---------------------------------------------------------------------
+-- Votar MVP del partido: cada jugador registrado que participó vota
+-- al MVP del equipo contrario. Un solo voto por jugador por partido.
+-- Si el partido todavía no está en estado 'jugado', no se puede votar.
+-- ---------------------------------------------------------------------
+create or replace function fn_votar_mvp(
+  p_partido_id uuid,
+  p_candidato_id uuid
+)
+returns void language plpgsql security definer as $$
+declare
+  v_votante_id uuid;
+  v_equipo_votante equipo_enum;
+  v_equipo_candidato equipo_enum;
+  v_tipo_votante tipo_jugador;
+begin
+  -- El votante es quien llama
+  select j.id, j.tipo
+    into v_votante_id, v_tipo_votante
+    from jugadores j
+    where j.auth_user_id = auth.uid();
+
+  if v_votante_id is null then
+    raise exception 'NO_AUTENTICADO: No se encontró tu perfil.';
+  end if;
+
+  if v_tipo_votante = 'invitado' then
+    raise exception 'INVITADO: Los invitados no pueden votar el MVP.';
+  end if;
+
+  -- El partido tiene que estar jugado
+  if not exists (select 1 from partidos where id = p_partido_id and estado = 'jugado') then
+    raise exception 'PARTIDO_NO_JUGADO: Solo se puede votar el MVP de partidos ya jugados.';
+  end if;
+
+  -- El votante tiene que haber jugado ese partido
+  select equipo into v_equipo_votante
+    from inscripciones
+    where partido_id = p_partido_id
+      and jugador_id = v_votante_id
+      and estado_inscripcion = 'confirmado';
+
+  if v_equipo_votante is null then
+    raise exception 'NO_PARTICIPANTE: No participaste en ese partido.';
+  end if;
+
+  -- El candidato tiene que haber jugado ese partido en el equipo contrario
+  select equipo into v_equipo_candidato
+    from inscripciones
+    where partido_id = p_partido_id
+      and jugador_id = p_candidato_id
+      and estado_inscripcion = 'confirmado';
+
+  if v_equipo_candidato is null then
+    raise exception 'CANDIDATO_NO_PARTICIPANTE: Ese jugador no participó en ese partido.';
+  end if;
+
+  if v_equipo_candidato = v_equipo_votante then
+    raise exception 'MISMO_EQUIPO: Tienes que votar a alguien del equipo contrario.';
+  end if;
+
+  -- Un voto por partido (unique constraint lo garantiza también)
+  insert into mvp_votos (partido_id, votante_id, candidato_id)
+  values (p_partido_id, v_votante_id, p_candidato_id)
+  on conflict (partido_id, votante_id) do update
+    set candidato_id = p_candidato_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- Cerrar votación MVP y aplicar el bonus de rating al ganador.
+-- Solo el admin puede llamar a esta función.
+--
+-- Regla de empate (Opción A): si hay empate exacto entre candidatos
+-- del mismo equipo, ese equipo no tiene MVP en ese partido — nadie
+-- recibe el bonus ni se cuenta el MVP en su historial.
+--
+-- Bonus: +1 punto de rating al MVP de cada equipo. Al MVP del equipo
+-- perdedor le "restamos" menos (recibe +1 antes del descuento por
+-- perder). Al MVP del equipo ganador le sube +1 adicional.
+-- ---------------------------------------------------------------------
+create or replace function fn_cerrar_votacion_mvp(p_partido_id uuid)
+returns table(equipo text, mvp_nombre text, votos_recibidos bigint)
+language plpgsql security definer as $$
+#variable_conflict use_column
+declare
+  v_mvp_a uuid; v_votos_a bigint;
+  v_mvp_b uuid; v_votos_b bigint;
+  v_segundo_a bigint; v_segundo_b bigint;
+begin
+  if not fn_is_admin(auth.uid()) then
+    raise exception 'NO_AUTORIZADO: Solo el administrador puede cerrar la votación MVP.';
+  end if;
+
+  if not exists (select 1 from partidos where id = p_partido_id and estado = 'jugado') then
+    raise exception 'PARTIDO_NO_JUGADO: Solo se puede cerrar el MVP de partidos jugados.';
+  end if;
+
+  -- MVP del equipo A (votado por el equipo B)
+  select v.candidato_id, count(*) as cnt
+    into v_mvp_a, v_votos_a
+    from mvp_votos v
+    join inscripciones i on i.partido_id = v.partido_id and i.jugador_id = v.candidato_id
+    where v.partido_id = p_partido_id and i.equipo = 'A'
+    group by v.candidato_id
+    order by cnt desc
+    limit 1;
+
+  -- ¿Hay empate con el segundo?
+  if v_mvp_a is not null then
+    select count(*) into v_segundo_a
+      from mvp_votos v
+      join inscripciones i on i.partido_id = v.partido_id and i.jugador_id = v.candidato_id
+      where v.partido_id = p_partido_id and i.equipo = 'A'
+      group by v.candidato_id
+      having count(*) = v_votos_a
+      having count(*) > 0;
+    -- Si hay más de un candidato con el máximo de votos, hay empate -> no hay MVP
+    if v_segundo_a > 1 then
+      v_mvp_a := null;
+    end if;
+  end if;
+
+  -- MVP del equipo B (votado por el equipo A)
+  select v.candidato_id, count(*) as cnt
+    into v_mvp_b, v_votos_b
+    from mvp_votos v
+    join inscripciones i on i.partido_id = v.partido_id and i.jugador_id = v.candidato_id
+    where v.partido_id = p_partido_id and i.equipo = 'B'
+    group by v.candidato_id
+    order by cnt desc
+    limit 1;
+
+  if v_mvp_b is not null then
+    select count(*) into v_segundo_b
+      from mvp_votos v
+      join inscripciones i on i.partido_id = v.partido_id and i.jugador_id = v.candidato_id
+      where v.partido_id = p_partido_id and i.equipo = 'B'
+      group by v.candidato_id
+      having count(*) = v_votos_b;
+    if v_segundo_b > 1 then
+      v_mvp_b := null;
+    end if;
+  end if;
+
+  -- Aplicar bonus +1 y sumar MVP al historial
+  if v_mvp_a is not null then
+    update jugadores set
+      rating_actual = greatest(0, least(100, rating_actual + 1)),
+      mvps_recibidos = mvps_recibidos + 1
+    where id = v_mvp_a;
+  end if;
+
+  if v_mvp_b is not null then
+    update jugadores set
+      rating_actual = greatest(0, least(100, rating_actual + 1)),
+      mvps_recibidos = mvps_recibidos + 1
+    where id = v_mvp_b;
+  end if;
+
+  -- Devolver quiénes son los MVPs para mostrarlo en la pantalla
+  return query
+    select 'Blancos'::text,
+           j.nombre || case when j.apellidos is not null then ' ' || j.apellidos else '' end,
+           (select count(*) from mvp_votos v2
+            join inscripciones i2 on i2.partido_id = v2.partido_id and i2.jugador_id = v2.candidato_id
+            where v2.partido_id = p_partido_id and i2.equipo = 'A')
+    from jugadores j where j.id = v_mvp_a
+    union all
+    select 'Negros'::text,
+           j.nombre || case when j.apellidos is not null then ' ' || j.apellidos else '' end,
+           (select count(*) from mvp_votos v2
+            join inscripciones i2 on i2.partido_id = v2.partido_id and i2.jugador_id = v2.candidato_id
+            where v2.partido_id = p_partido_id and i2.equipo = 'B')
+    from jugadores j where j.id = v_mvp_b;
+end;
+$$;
+
 create or replace function fn_partidos_para_recordatorio()
 returns table(partido_id uuid, fecha date, hora time, campo text, jugador_id uuid, nombre text, email text)
 language sql stable as $$
@@ -839,6 +1082,12 @@ alter table partidos enable row level security;
 alter table inscripciones enable row level security;
 alter table pagos enable row level security;
 alter table historial_companeros enable row level security;
+alter table mvp_votos enable row level security;
+
+-- mvp_votos: cada uno ve todos los votos del partido (para saber
+-- quién ha votado ya), pero solo puede insertar/actualizar el suyo
+-- propio a través de fn_votar_mvp (SECURITY DEFINER).
+create policy mvp_votos_select on mvp_votos for select to authenticated using (true);
 
 -- jugadores: todos los autenticados pueden leer (para ver equipos,
 -- historial, rankings); solo admin o el propio jugador puede actualizar

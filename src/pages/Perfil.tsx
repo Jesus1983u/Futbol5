@@ -131,6 +131,10 @@ export function Perfil() {
 
           <div className="mt-4 space-y-2 border-t border-pitch-line pt-3">
             <FilaDato
+              etiqueta="MVPs recibidos"
+              valor={stats.mvps_recibidos > 0 ? `🏆 ${stats.mvps_recibidos}` : '0'}
+            />
+            <FilaDato
               etiqueta="Posición preferida"
               valor={
                 stats.posicion_preferida === 'mixto'
