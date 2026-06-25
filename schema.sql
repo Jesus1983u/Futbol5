@@ -969,19 +969,19 @@ begin
   -- ¿Hay empate con el segundo?
   if v_mvp_a is not null then
     select count(*) into v_segundo_a
-      from mvp_votos v
-      join inscripciones i on i.partido_id = v.partido_id and i.jugador_id = v.candidato_id
-      where v.partido_id = p_partido_id and i.equipo = 'A'
-      group by v.candidato_id
-      having count(*) = v_votos_a
-      having count(*) > 0;
-    -- Si hay más de un candidato con el máximo de votos, hay empate -> no hay MVP
+      from (
+        select v.candidato_id
+        from mvp_votos v
+        join inscripciones i on i.partido_id = v.partido_id and i.jugador_id = v.candidato_id
+        where v.partido_id = p_partido_id and i.equipo = 'A'
+        group by v.candidato_id
+        having count(*) = v_votos_a
+      ) candidatos_empatados;
     if v_segundo_a > 1 then
       v_mvp_a := null;
     end if;
   end if;
 
-  -- MVP del equipo B (votado por el equipo A)
   select v.candidato_id, count(*) as cnt
     into v_mvp_b, v_votos_b
     from mvp_votos v
@@ -993,11 +993,14 @@ begin
 
   if v_mvp_b is not null then
     select count(*) into v_segundo_b
-      from mvp_votos v
-      join inscripciones i on i.partido_id = v.partido_id and i.jugador_id = v.candidato_id
-      where v.partido_id = p_partido_id and i.equipo = 'B'
-      group by v.candidato_id
-      having count(*) = v_votos_b;
+      from (
+        select v.candidato_id
+        from mvp_votos v
+        join inscripciones i on i.partido_id = v.partido_id and i.jugador_id = v.candidato_id
+        where v.partido_id = p_partido_id and i.equipo = 'B'
+        group by v.candidato_id
+        having count(*) = v_votos_b
+      ) candidatos_empatados;
     if v_segundo_b > 1 then
       v_mvp_b := null;
     end if;
