@@ -219,6 +219,42 @@ export async function listarHistorialCompaneros(): Promise<ParConNombres[]> {
     .sort((a, b) => b.veces - a.veces);
 }
 
+export interface CompaneroConHistorial {
+  nombre: string;
+  veces: number;
+  victorias: number;
+  empates: number;
+  derrotas: number;
+}
+
+/** Para la pantalla de Historial de cada usuario: solo las parejas en
+ *  las que participa él mismo, con el desglose V/E/D. */
+export async function listarMisCompaneros(
+  miId: string
+): Promise<CompaneroConHistorial[]> {
+  const [pares, { data: jugadores, error }] = await Promise.all([
+    obtenerHistorialPares(),
+    supabase.from('jugadores').select('id, nombre, apellidos'),
+  ]);
+  if (error) throw error;
+  const nombrePorId = new Map(
+    (jugadores ?? []).map((j) => [j.id as string, `${j.nombre} ${j.apellidos ?? ''}`.trim()])
+  );
+  return pares
+    .filter((p) => p.jugadorA === miId || p.jugadorB === miId)
+    .map((p) => {
+      const otroId = p.jugadorA === miId ? p.jugadorB : p.jugadorA;
+      return {
+        nombre: nombrePorId.get(otroId) ?? '(jugador dado de baja)',
+        veces: p.veces,
+        victorias: p.victorias,
+        empates: p.empates,
+        derrotas: p.derrotas,
+      };
+    })
+    .sort((a, b) => b.veces - a.veces);
+}
+
 export interface CompaneroDestacado {
   nombre: string;
   sinergia: number;

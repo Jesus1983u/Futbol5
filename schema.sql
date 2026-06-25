@@ -823,6 +823,13 @@ $$;
 
 grant execute on function fn_codigo_invitacion_valido(text) to anon, authenticated;
 
+-- Las vistas necesitan un GRANT explícito en Supabase porque el motor
+-- no hereda automáticamente los permisos de las tablas subyacentes
+-- cuando se accede a través de una vista.
+grant select on vista_estadisticas_jugadores to authenticated;
+grant select on vista_historial_jugador to authenticated;
+grant select on vista_pagos_pendientes to authenticated;
+
 -- =====================================================================
 -- RLS (Row Level Security)
 -- =====================================================================
